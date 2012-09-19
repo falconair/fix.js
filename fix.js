@@ -3,14 +3,43 @@
 "use strict";
 
 var util = require('util');
+var net = require('net');
+var fixutils = require('./fixutils.js');
 var _ = require('./deps/underscore-min.js');
 
 exports.fixClient = function(fixVersion, senderCompID, targetCompID, options){
     var self = this;
     
-    this.fixVersion = fixVersion;
-    this.senderCompID = senderCompID;
-    this.targetCompID = targetCompID;
+    var socket = null;
+    
+    this.createConnection = function(options, listener){
+        self.socket = net.createConnection(options,function(){
+            
+            //client connected, create fix session
+            var session = fixSession(fixVersion, senderCompID, targetCompID, options);
+
+            session.onOutMsg(function(msg){
+                var outstr = fixutils.convertMapToFIX(msg);
+                socket.write(outstr);
+                
+            });
+            session.onEndSession(function(){
+                socket.end();
+            });
+
+            
+            socket.on('data',function(data){
+                //Todo, convert to FIX
+                session.processIncomingMsg(data);
+            });
+            
+            //pass on this session to client
+            listener(session);
+            
+        });
+    }
+    
+
 }
 
 exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
@@ -19,30 +48,33 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     this.senderCompID = senderCompID;
     this.targetCompID = targetCompID;
 
-    //options
-    this.defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
-    this.sendHeartbeats = options.sendHeartbeats || true;
-    this.expectHeartbeats = options.expectHeartbeats || true;
-    this.respondToLogon = options.respondToLogon || true;
+    //behavior control variables
+    this.shouldSendHeartbeats = options.shouldSendHeartbeats || true;
+    this.shouldExpectHeartbeats = options.shouldExpectHeartbeats || true;
+    this.shouldRespondToLogon = options.shouldRespondToLogon || true;
     this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
     this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
-    this.getSeqNums = options.getSeqNums || function () { return {'incomingSeqNum': 1, 'outgoingSeqNum': 1 }; } ;
+
+    //options
+    var defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
     this.datastore = options.datastore || new function () {
         this.add = function(data){};
         this.each = function(){};
     } ;
 
-    
-    //runtime variables
-    this.isLoggedIn = false;
+
+    //transient variable (nothing to do with state)
     this.heartbeatIntervalID = "";
-    this.timeOfLastIncoming = new Date().getTime();
-    this.timeOfLastOutgoing = new Date().getTime();
-    this.testRequestID = 1;
-    this.incomingSeqNum = options.incomingSeqNum || 1;
-    this.outgoingSeqNum = options.outgoingSeqNum || 1;
-    this.isResendRequested = false;
-    this.isLogoutRequested = false;
+
+    //runtime variables 
+    var isLoggedIn = false;
+    var timeOfLastIncoming = new Date().getTime();
+    var timeOfLastOutgoing = new Date().getTime();
+    var testRequestID = 1;
+    var incomingSeqNum = options.incomingSeqNum || 1;
+    var outgoingSeqNum = options.outgoingSeqNum || 1;
+    var isResendRequested = false;
+    var isLogoutRequested = false;
     
     var self = this;
 
@@ -50,31 +82,40 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     //process incoming messages
     this.processIncomingMsg = function(fix){
         self.timeOfLastIncoming = new Date().getTime();
+        self.stateListener({timeOfLastIncoming:self.timeOfLastIncoming});
         
-        var msgType = fix['35'];
-        //TODO confirm existance of tags 8,9,35,49,56,52
 
         //If not logged in
         if (self.isLoggedIn === false){
+            //==if no message type, can't continue, fail
+            if(!_.has(fix,35)){
+                var errorMsg = '[FATAL] Message contains no tag 35, unable to continue:' + JSON.stringify(fix);
+                util.error(errorMsg);
+                self.sendError("FATAL",errorMsg);
+                return;
+            }
+            
+            var msgType = fix['35'];
             
             //==Confirm first msg is logon==
             if (msgType !== 'A') {
-                var errorMsg = '[FATAL] First message must be logon:' + fix;
-                util.log(errorMsg);
+                var errorMsg = '[FATAL] First message must be logon:' + JSON.stringify(fix);
+                util.error(errorMsg);
                 self.sendError("FATAL",errorMsg);
                 return;
             }
             else{ //log on message
-                
+                var heartbeatInMilliSeconds = defaultHeartbeatSeconds;
                 if(!_.has(fix,108)){
-                    var errorMsg = '[FATAL] Heartbeat message missing from logon:' + fix;
-                    util.log(errorMsg);
-                    self.sendError("FATAL",errorMsg);
+                    var errorMsg = '[ERROR] Heartbeat message missing from logon, will use default:' + JSON.stringify(fix);
+                    util.error(errorMsg);
+                    self.sendError("ERROR",errorMsg);
                     return;
                 }
-                var _heartbeatInMilliSeconds = fix[108] ;
-                //TODO if 108 missing, send error
-                var heartbeatInMilliSeconds = parseInt(_heartbeatInMilliSeconds, 10) * 1000;
+                else{
+                    var _heartbeatInMilliSeconds = fix[108] ;
+                    heartbeatInMilliSeconds = parseInt(_heartbeatInMilliSeconds, 10) * 1000;                    
+                }
                 
                 //==Set heartbeat mechanism
                 self.heartbeatIntervalID = setInterval(function () {
@@ -83,14 +124,15 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
                     //console.log("DEBUG:"+(currentTime-self.timeOfLastOutgoing)+">"+heartbeatInMilliSeconds);   
     
                     //==send heartbeats
-                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && self.sendHeartbeats) {
+                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && self.shouldSendHeartbeats) {
                         self.sendMsg({
                                 '35': '0'
                             }); //heartbeat
                     }
     
                     //==ask counter party to wake up
-                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.expectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.shouldExpectHeartbeats) {
+                        self.stateListener({testRequestID:self.testRequestID});
                         self.sendMsg({
                                 '35': '1',
                                 '112': self.testRequestID++
@@ -98,7 +140,7 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
                     }
     
                     //==counter party might be dead, kill connection
-                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && self.expectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && self.shouldExpectHeartbeats) {
                         var error = '[FATAL] No heartbeat from counter party in milliseconds ' + heartbeatInMilliSeconds * 1.5;
                         //util.debug("Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
                         util.log(error);
@@ -107,21 +149,31 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
                     }
     
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
-                //clearInterval(self.heartbeatIntervalID); //TODO after logoff
                 
-                if(self.respondToLogon){
+                if(self.shouldRespondToLogon){
                     self.sendMsg({35:"A", 108:fix[108]}); //logon response
                 }
                 
+                //==Logon successful
+                self.isLoggedIn = true;
+                self.stateListener({isLoggedIn:self.isLoggedIn});
                 
             }
         }
         
-        //==Logon successful
-        self.isLoggedIn = true;
         
         //store msg to datastore
         self.datastore.add(fix);
+        
+        //==Confirm message contains required fields (mainly seqno, time, etc.)
+        if(!_.has(fix,34) || !_.has(fix,35) || !_.has(fix,49) || !_.has(fix,56) || !_.has(fix,52) ){
+            var errorMsg = '[WARN] Message does not contain one of required tags:34,35,49,56,52';
+            util.error(errorMsg+":"+JSON.stringify(fix));
+            self.sendMsg({45:fix[34], 58:errorMsg});
+            self.sendError("WARN",errorMsg);
+            return;
+        }
+        var msgType = fix['35'];
         
         //==Process seq-reset (no gap-fill)
         if (msgType === '4' && _.isUndefined(fix['123']) || fix['123'] === 'N') {
@@ -129,8 +181,9 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
             var resetseqno = parseInt(resetseqno, 10);
             if (resetseqno >= self.incomingSeqNum) {
                 self.incomingSeqNum = resetseqno
+                self.stateListener({incomingSeqNum:self.incomingSeqNum});
             } else {
-                var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + raw;
+                var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
                 self.sendError("FATAL",error);
                 return;
@@ -140,12 +193,12 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
         //==Check sequence numbers
         var msgSeqNumStr = fix['34'];
         var msgSeqNum = parseInt(msgSeqNumStr, 10);
-        //TODO check required values, such as 34 earlier!
         
         //==expected sequence number
         if (msgSeqNum === self.incomingSeqNum) {
             self.incomingSeqNum++;
             self.isResendRequested = false;
+            self.stateListener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
         }
         //less than expected
         else if (msgSeqNum < self.incomingSeqNum) {
@@ -155,7 +208,7 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
             }
             //if not posdup, error
             else {
-                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + self.incomingSeqNum+ ') : ' + raw;
+                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + self.incomingSeqNum+ ') : ' + JSON.stringify(fix);
                 util.log(error);
                 self.sendError("FATAL",error);
                 return;
@@ -190,6 +243,7 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
             if (self.isResendRequested === false) {
                 self.isResendRequested = true;
                 //send resend-request
+                self.stateListener({isResendRequested:self.isResendRequested});
                 self.sendMsg({
                         '35': '2',
                         '7': self.incomingSeqNum,
@@ -205,8 +259,9 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
 
             if (newSeqNo >= self.incomingSeqNum) {
                 self.incomingSeqNum = newSeqNo;
+                self.stateListener({incomingSeqNum:self.incomingSeqNum});
             } else {
-                var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + fix;
+                var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
                 self.sendError("FATAL",error);
                 return;
@@ -250,6 +305,7 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
 
 
         //==Process logout
+        //TODO isLogoutRequested is never modified!
         if (msgType === '5') {
             if (self.isLogoutRequested) {
                 self.endSession();
@@ -264,8 +320,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     }
     
     //callback listeners
+    this.stateListener = function(){};
     this.msgListener = function(){};
     this.outMsgListener = function(){};
+    this.endSessionListener = function(){};
     //this may only be access by method sendError(type, msg)
     this.errorListener = function(){};
     
@@ -274,17 +332,19 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     this.onMsg = function(callback){ self.msgListener = callback; }
     this.onOutMsg = function(callback){ self.outMsgListener = callback; }
     this.onError = function(callback){ self.errorListener = callback; }
+    this.onStateChange = function(callback){ self.stateListener = callback; }
+    this.onEndSession = function(callback){ self.endSessionListener = callback; }
     
     //public methods
     this.sendError = function(type, msg){
         self.errorListener(type,msg);
-        self.endSession();
+        self.endSessionListener();
     }
     
     this.endSession = function(){
         //util.debug("End session Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
         clearInterval(self.heartbeatIntervalID);
-        
+        self.endSessionListener();
     }
     
     this.sendMsg = function(msg){
@@ -294,6 +354,7 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
         var prefil = {8:self.fixVersion, 49:self.senderCompID, 56:self.targetCompID, 34:(self.outgoingSeqNum++).toString(), 52: new Date().getTime() };
         
         _.extend(prefil,fix);
+        self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
         self.outMsgListener(prefil);
     }
     

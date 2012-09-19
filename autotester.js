@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 var fs = require('fs');
+var util = require('util');
 var fix = require("./fix.js");
 
 if(process.argv.length <1){
-    console.log("Usage: node autotester.jar <testcase>");
+    util.log("Usage: node autotester.jar <testcase>");
     process.exit(-1);
 }
 
@@ -12,12 +13,20 @@ var testcase = process.argv[2];
 var lines = [];
 var responses = [];
 
+var isErrorFree = true;
+
 fs.readFile(testcase, function(err,data){
     if(err) throw err;
     var txt = data.toString().split('\n');
     for(s in txt){
         var line = txt[s];
+        
+        if(line.length < 2){ continue; }
+        
         var command = line.charAt(0);
+        
+        if(command === "#"){ continue;}
+        
         var fixstr = line.substr(1,line.length);
         var fixarr = fixstr.split('\u0001');
         
@@ -30,7 +39,7 @@ fs.readFile(testcase, function(err,data){
         lines.push({command:command, detail:fixstr, fix:fixdata});
         
         //read command
-        if(command === "R"){
+        if(command === "E"){
             responses.push(fixdata);
         }
     }
@@ -38,11 +47,11 @@ fs.readFile(testcase, function(err,data){
     responses.reverse();
     var sess = null;
     
+    
     for(var idx = 0; idx< lines.length; idx++){
         var line = lines[idx];
-        //console.log(JSON.stringify(line));
         
-        if(line.command === "e" && line.detail === "CONNECT"){
+        if(line.command === "i" && line.detail === "CONNECT"){
             var nextfix = lines[idx+1];
 
             var version = nextfix.fix["8"];
@@ -50,31 +59,63 @@ fs.readFile(testcase, function(err,data){
             var target = nextfix.fix["49"];
             
             sess = new fix.fixSession(version,sender,target, {});
+            sess.onStateChange(function(state){
+                util.log("State change: "+JSON.stringify(state));
+            });
             sess.onOutMsg(function(act){
                 var exp = responses.pop();
-                console.log("Expected:"+JSON.stringify(exp));
-                console.log("Actual:"+JSON.stringify(act));
                 
-                for(idx in act){
-                    if(exp[idx] === "<TIME>"){
+                //util.log("Expected:"+JSON.stringify(exp));
+                //util.log("Actual:"+JSON.stringify(act));
+
+                
+                var isError = false;
+                var errors = [];
+                
+                for(actidx in act){
+                    if(exp[actidx] === "<TIME>" || exp[actidx] == "00000000-00:00:00"){
                         continue;
                     }
-                    if(act[idx] !== exp[idx]){
-                        console.log("Tag "+idx+"'s expected val ["+exp[idx]+"] does not match actual ["+act[idx]+"]");
+                    if(act[actidx] !== exp[actidx]){
+                        //util.log("Tag "+idx+"'s expected val ["+exp[idx]+"] does not match actual ["+act[idx]+"]");
+                        var err = "[ERROR] Tag "+actidx+"'s expected val ["+exp[actidx]+"] does not match actual ["+act[actidx]+"]";
+                        isError = true;
+                        isErrorFree = false;
+                        errors.push(err);
+                    }
+                }
+                
+                if(isError){
+                    util.log("Expected:"+JSON.stringify(exp));
+                    util.log("Actual:"+JSON.stringify(act));
+                    
+                    for(actidx in errors){
+                        util.error(errors[idx]);
                     }
                 }
             });
 
         }
         
-        if(line.command === "e" && line.detail === "DISCONNECT"){
+        if(line.command === "i" && line.detail === "DISCONNECT"){
             sess.endSession();
 
         }
         
-        if(line.command === "E"){
+        if(line.command === "I"){
+            util.log("Sending:"+JSON.stringify(line.fix));
             sess.processIncomingMsg(line.fix);
         }
+        
+        if(line.command === "E"){
+            util.log("Receiving:"+JSON.stringify(line.fix));
+            //continue;
+        }
     }
+    
+    //if(isErrorFree) util.log(testcase+": PASS");
+    //else util.log(testcase+": PASS");
 });
+
+
 
