@@ -8,16 +8,54 @@ var fixutils = require('./fixutils.js');
 var _ = require('./deps/underscore-min.js');
 
 exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
-    var self = this;
     
+    var self = this;
     var socket = null;
+    var session = new FIXSession(fixVersion, senderCompID, targetCompID, options);
+    
+    /*******Public*******/
+    
+    //callback subscription methods
+    //[PUBLIC] listen to incoming messages (user apps subscribe here)
+    //arguments: json object
+    this.onMsg = function(callback){ session.onMsg(callback); }
+    
+    //[PUBLIC] listen to outgoing messages (only used by admin apps)
+    //arguments: json object
+    this.onOutMsg = function(callback){ session.onOutMsg(callback); }
+    
+    //[PUBLIC] listen to error messages
+    //arguments: type -- (FATAL, ERROR, etc.) -- fatal means session is gone
+    //arguments: description -- text description
+    this.onError = function(callback){ session.onError(callback); }
+    
+    //[PUBLIC] listen to state changes (only used by admin apps)
+    //arguments: json object -- example: {loggedIn:true}
+    this.onStateChange = function(callback){ session.onStateChange(callback); }
+
+    //[PUBLIC] listen to end of session alerts (only used by system apps)
+    //  for example, tcp connector uses this to find out when to disconnect
+    this.onEndSession = function(callback){ session.onEndSession(callback); }
+    
+    //[PUBLIC] Sends FIX json to counter party
+    this.sendMsg = function(msg){ session.sendMsg(msg); }
+    
+    //[PUBLIC] Sends logon FIX json to counter party
+    this.sendLogon = function(){ session.sendLogon(); }
+    
+    //[PUBLIC] Sends logoff FIX json to counter party
+    this.sendLogoff = function(){ session.sendLogoff(); }
+    
+    //[PUBLIC] Modify's one or more 'behabior' control variables.
+    //  Neverever used outside of testing
+    this.modifyBehavior = function(data){ session.modifyBehavior(data); }
+
     
     this.createConnection = function(options, listener){
         self.socket = net.createConnection(options,function(){
             
             //client connected, create fix session
             var fixFrameDecoder = new FixFrameDecoder();
-            var session = new FIXSession(fixVersion, senderCompID, targetCompID, options);
 
             session.onOutMsg(function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
@@ -30,7 +68,7 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
 
             
             socket.on('data',function(data){
-                //Todo, convert to FIX
+                //TODO, convert to FIX
                 fixFrameDecoder.onMsg(function(data){
                     session.processIncomingMsg(data);
                 });
@@ -44,23 +82,37 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
             
         });
     }
-    
-
 }
 
 exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
 
-    /*******Public Methods*******/
+    /*******Public*******/
+    
     //callback subscription methods
+    //[PUBLIC] listen to incoming messages (user apps subscribe here)
+    //arguments: json object
     this.onMsg = function(callback){ self.msgListener.push(callback); }
+    
+    //[PUBLIC] listen to outgoing messages (only used by admin apps)
+    //arguments: json object
     this.onOutMsg = function(callback){ self.outMsgListener.push(callback); }
+    
+    //[PUBLIC] listen to error messages
+    //arguments: type -- (FATAL, ERROR, etc.) -- fatal means session is gone
+    //arguments: description -- text description
     this.onError = function(callback){ self.errorListener.push(callback); }
+    
+    //[PUBLIC] listen to state changes (only used by admin apps)
+    //arguments: json object -- example: {loggedIn:true}
     this.onStateChange = function(callback){ self.stateListener.push(callback); }
+
+    //[PUBLIC] listen to end of session alerts (only used by system apps)
+    //  for example, tcp connector uses this to find out when to disconnect
     this.onEndSession = function(callback){ self.endSessionListener.push(callback); }
     
     //non-callback methods
 
-    //Sends FIX json to counter party
+    //[PUBLIC] Sends FIX json to counter party
     this.sendMsg = function(msg){
         var fix = _.clone(msg);
         
@@ -78,20 +130,20 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         //self.outMsgListener(prefil);
     }
     
-    //Sends logon FIX json to counter party
+    //[PUBLIC] Sends logon FIX json to counter party
     this.sendLogon = function(){
         var msg = { 35:"A" };
         self.sendMsg(msg);
     }
 
-    //Sends logoff FIX json to counter party
+    //[PUBLIC] Sends logoff FIX json to counter party
     this.sendLogoff = function(){
         var msg = { 35:"5" };
         self.isLogoutRequested = true;
         self.sendMsg(msg);
     }
     
-    //Modify's one or more 'behabior' control variables.
+    //[PUBLIC] Modify's one or more 'behabior' control variables.
     //  Neverever used outside of testing
     this.modifyBehavior = function(data){
         for(idx in data){
@@ -111,38 +163,11 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     }
 
 
-    //behavior control variables
-    this.shouldSendHeartbeats = options.shouldSendHeartbeats || true;
-    this.shouldExpectHeartbeats = options.shouldExpectHeartbeats || true;
-    this.shouldRespondToLogon = options.shouldRespondToLogon || true;
-
-    //options
-    var defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
-    this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
-    this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
-    this.datastore = options.datastore || new function () {
-        this.add = function(data){};
-        this.each = function(){};
-    } ;
-
-
-    //transient variable (nothing to do with state)
-    this.heartbeatIntervalID = "";
-
-    //runtime variables 
-    var isLoggedIn = false;
-    var timeOfLastIncoming = new Date().getTime();
-    var timeOfLastOutgoing = new Date().getTime();
-    var testRequestID = 1;
-    var incomingSeqNum = options.incomingSeqNum || 1;
-    var outgoingSeqNum = options.outgoingSeqNum || 1;
-    var isResendRequested = false;
-    var isLogoutRequested = false;
     
     var self = this;
 
     
-    //process incoming messages
+    //[PUBLIC] process incoming messages
     this.processIncomingMsg = function(fix){
         self.timeOfLastIncoming = new Date().getTime();
         _.each(self.stateListener, function(listener){
@@ -405,6 +430,38 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         });
         //self.msgListener(fix);
     }
+    
+    
+    /*******Private*******/
+    
+    //behavior control variables
+    var shouldSendHeartbeats = options.shouldSendHeartbeats || true;
+    var shouldExpectHeartbeats = options.shouldExpectHeartbeats || true;
+    var shouldRespondToLogon = options.shouldRespondToLogon || true;
+
+    //options
+    var defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
+    this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
+    this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
+    this.datastore = options.datastore || new function () {
+        this.add = function(data){};
+        this.each = function(){};
+    } ;
+
+
+    //transient variable (nothing to do with state)
+    this.heartbeatIntervalID = "";
+
+    //runtime variables 
+    var isLoggedIn = false;
+    var timeOfLastIncoming = new Date().getTime();
+    var timeOfLastOutgoing = new Date().getTime();
+    var testRequestID = 1;
+    var incomingSeqNum = options.incomingSeqNum || 1;
+    var outgoingSeqNum = options.outgoingSeqNum || 1;
+    var isResendRequested = false;
+    var isLogoutRequested = false;
+
     
     //callback listeners
     this.stateListener = [];
