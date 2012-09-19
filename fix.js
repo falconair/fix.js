@@ -72,7 +72,7 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
                 fixFrameDecoder.onMsg(function(data){
                     session.processIncomingMsg(data);
                 });
-                fixFrameDecoder.processInput(data);
+                fixFrameDecoder.processData(data);
                 fixFrameDecoder.onError(function(type, error){
                 });
             });
