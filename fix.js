@@ -82,7 +82,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     //process incoming messages
     this.processIncomingMsg = function(fix){
         self.timeOfLastIncoming = new Date().getTime();
-        self.stateListener({timeOfLastIncoming:self.timeOfLastIncoming});
+        _.each(self.stateListener, function(listener){
+            listener({timeOfLastIncoming:self.timeOfLastIncoming});
+        });
+        //self.stateListener({timeOfLastIncoming:self.timeOfLastIncoming});
         
 
         //If not logged in
@@ -132,7 +135,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
     
                     //==ask counter party to wake up
                     if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.shouldExpectHeartbeats) {
-                        self.stateListener({testRequestID:self.testRequestID});
+                        _.each(self.stateListener, function(listener){
+                            listener({testRequestID:self.testRequestID});
+                        });
+                        //self.stateListener({testRequestID:self.testRequestID});
                         self.sendMsg({
                                 '35': '1',
                                 '112': self.testRequestID++
@@ -156,7 +162,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
                 
                 //==Logon successful
                 self.isLoggedIn = true;
-                self.stateListener({isLoggedIn:self.isLoggedIn});
+                _.each(self.stateListener, function(listener){
+                    listener({isLoggedIn:self.isLoggedIn});
+                });
+                //self.stateListener({isLoggedIn:self.isLoggedIn});
                 
             }
         }
@@ -181,7 +190,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
             var resetseqno = parseInt(resetseqno, 10);
             if (resetseqno >= self.incomingSeqNum) {
                 self.incomingSeqNum = resetseqno
-                self.stateListener({incomingSeqNum:self.incomingSeqNum});
+                _.each(self.stateListener, function(listener){
+                    listener({incomingSeqNum:self.incomingSeqNum});
+                });
+                //self.stateListener({incomingSeqNum:self.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
@@ -198,7 +210,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
         if (msgSeqNum === self.incomingSeqNum) {
             self.incomingSeqNum++;
             self.isResendRequested = false;
-            self.stateListener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
+            _.each(self.stateListener, function(listener){
+                listener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
+            });
+            //self.stateListener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
         }
         //less than expected
         else if (msgSeqNum < self.incomingSeqNum) {
@@ -243,7 +258,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
             if (self.isResendRequested === false) {
                 self.isResendRequested = true;
                 //send resend-request
-                self.stateListener({isResendRequested:self.isResendRequested});
+                _.each(self.stateListener, function(listener){
+                    listener({isResendRequested:self.isResendRequested});
+                });
+                //self.stateListener({isResendRequested:self.isResendRequested});
                 self.sendMsg({
                         '35': '2',
                         '7': self.incomingSeqNum,
@@ -259,7 +277,10 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
 
             if (newSeqNo >= self.incomingSeqNum) {
                 self.incomingSeqNum = newSeqNo;
-                self.stateListener({incomingSeqNum:self.incomingSeqNum});
+                _.each(self.stateListener, function(listener){
+                    listener({incomingSeqNum:self.incomingSeqNum});
+                });
+                //self.stateListener({incomingSeqNum:self.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
@@ -316,35 +337,47 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
         
         
         //pass message on to listener
-        self.msgListener(fix);
+        _.each(self.msgListener, function(listener){
+            listener(prefil);
+        });
+        //self.msgListener(fix);
     }
     
     //callback listeners
-    this.stateListener = function(){};
-    this.msgListener = function(){};
-    this.outMsgListener = function(){};
-    this.endSessionListener = function(){};
+    this.stateListener = [];
+    this.msgListener = [];
+    this.outMsgListener = [];
+    this.endSessionListener = [];
     //this may only be access by method sendError(type, msg)
-    this.errorListener = function(){};
+    this.errorListener = [];
     
     
     //callback subscription methods
-    this.onMsg = function(callback){ self.msgListener = callback; }
-    this.onOutMsg = function(callback){ self.outMsgListener = callback; }
-    this.onError = function(callback){ self.errorListener = callback; }
-    this.onStateChange = function(callback){ self.stateListener = callback; }
-    this.onEndSession = function(callback){ self.endSessionListener = callback; }
+    this.onMsg = function(callback){ self.msgListener.push(callback); }
+    this.onOutMsg = function(callback){ self.outMsgListener.push(callback); }
+    this.onError = function(callback){ self.errorListener.push(callback); }
+    this.onStateChange = function(callback){ self.stateListener.push(callback); }
+    this.onEndSession = function(callback){ self.endSessionListener.push(callback); }
     
     //public methods
     this.sendError = function(type, msg){
-        self.errorListener(type,msg);
-        self.endSessionListener();
+        _.each(self.errorListener, function(listener){
+            listener(type,msg);
+        });
+        _.each(self.endSessionListener, function(listener){
+            listener();
+        });
+        //self.errorListener(type,msg);
+        //self.endSessionListener();
     }
     
     this.endSession = function(){
         //util.debug("End session Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
         clearInterval(self.heartbeatIntervalID);
-        self.endSessionListener();
+        _.each(self.endSessionListener, function(listener){
+            listener();
+        });
+        //self.endSessionListener();
     }
     
     this.sendMsg = function(msg){
@@ -354,8 +387,14 @@ exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
         var prefil = {8:self.fixVersion, 49:self.senderCompID, 56:self.targetCompID, 34:(self.outgoingSeqNum++).toString(), 52: new Date().getTime() };
         
         _.extend(prefil,fix);
-        self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
-        self.outMsgListener(prefil);
+        _.each(self.stateListener, function(listener){
+            listener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
+        });
+        _.each(self.outMsgListener, function(listener){
+            listener(prefil);
+        });
+        //self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
+        //self.outMsgListener(prefil);
     }
     
     this.sendLogon = function(){
