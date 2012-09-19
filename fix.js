@@ -7,7 +7,7 @@ var net = require('net');
 var fixutils = require('./fixutils.js');
 var _ = require('./deps/underscore-min.js');
 
-exports.fixClient = function(fixVersion, senderCompID, targetCompID, options){
+exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
     var self = this;
     
     var socket = null;
@@ -16,7 +16,8 @@ exports.fixClient = function(fixVersion, senderCompID, targetCompID, options){
         self.socket = net.createConnection(options,function(){
             
             //client connected, create fix session
-            var session = fixSession(fixVersion, senderCompID, targetCompID, options);
+            var fixFrameDecoder = new FixFrameDecoder();
+            var session = new FIXSession(fixVersion, senderCompID, targetCompID, options);
 
             session.onOutMsg(function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
@@ -30,7 +31,12 @@ exports.fixClient = function(fixVersion, senderCompID, targetCompID, options){
             
             socket.on('data',function(data){
                 //Todo, convert to FIX
-                session.processIncomingMsg(data);
+                fixFrameDecoder.onMsg(function(data){
+                    session.processIncomingMsg(data);
+                });
+                fixFrameDecoder.processInput(data);
+                fixFrameDecoder.onError(function(type, error){
+                });
             });
             
             //pass on this session to client
@@ -42,7 +48,7 @@ exports.fixClient = function(fixVersion, senderCompID, targetCompID, options){
 
 }
 
-exports.fixSession = function(fixVersion, senderCompID, targetCompID, options){
+exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     
     this.fixVersion = fixVersion;
     this.senderCompID = senderCompID;

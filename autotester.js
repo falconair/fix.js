@@ -58,7 +58,7 @@ fs.readFile(testcase, function(err,data){
             var sender = nextfix.fix["56"];
             var target = nextfix.fix["49"];
             
-            sess = new fix.fixSession(version,sender,target, {});
+            sess = new fix.FIXSession(version,sender,target, {});
             sess.onStateChange(function(state){
                 util.log("State change: "+JSON.stringify(state));
             });

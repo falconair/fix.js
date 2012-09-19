@@ -4,7 +4,7 @@ var assert = require('assert');
 var fix = require('./fix.js');
 
 function fixSessionTest(){
-    var f = new fix.fixSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
+    var f = new fix.FIXSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
 
     f.onOutMsg(function(msg){
         assert.equal(msg[35],"A","Expected outgoing message to be logon 'A'");
@@ -20,7 +20,7 @@ function fixSessionTest(){
 
 function fixSessionTest2(){
     var outCounter = 1;
-    var f = new fix.fixSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
+    var f = new fix.FIXSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
 
     f.onOutMsg(function(msg){
         console.log("OUT:"+JSON.stringify(msg));
@@ -56,7 +56,7 @@ function fixSessionTest2(){
 
 function testClient(){
     
-    var fixc = new fix.fixClient("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
+    var fixc = new fix.FIXClient("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
     //fixc.connect("remotehost",8080);
     fixc.connect("debug", function(session, error){
         //connection attempt resulted in error
