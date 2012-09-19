@@ -49,20 +49,77 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
 }
 
 exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
+
+    /*******Public Methods*******/
+    //callback subscription methods
+    this.onMsg = function(callback){ self.msgListener.push(callback); }
+    this.onOutMsg = function(callback){ self.outMsgListener.push(callback); }
+    this.onError = function(callback){ self.errorListener.push(callback); }
+    this.onStateChange = function(callback){ self.stateListener.push(callback); }
+    this.onEndSession = function(callback){ self.endSessionListener.push(callback); }
     
-    this.fixVersion = fixVersion;
-    this.senderCompID = senderCompID;
-    this.targetCompID = targetCompID;
+    //non-callback methods
+
+    //Sends FIX json to counter party
+    this.sendMsg = function(msg){
+        var fix = _.clone(msg);
+        
+        self.timeOfLastOutgoing = new Date().getTime();
+        var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:(self.outgoingSeqNum++).toString(), 52: new Date().getTime() };
+        
+        _.extend(prefil,fix);
+        _.each(self.stateListener, function(listener){
+            listener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
+        });
+        _.each(self.outMsgListener, function(listener){
+            listener(prefil);
+        });
+        //self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
+        //self.outMsgListener(prefil);
+    }
+    
+    //Sends logon FIX json to counter party
+    this.sendLogon = function(){
+        var msg = { 35:"A" };
+        self.sendMsg(msg);
+    }
+
+    //Sends logoff FIX json to counter party
+    this.sendLogoff = function(){
+        var msg = { 35:"5" };
+        self.isLogoutRequested = true;
+        self.sendMsg(msg);
+    }
+    
+    //Modify's one or more 'behabior' control variables.
+    //  Neverever used outside of testing
+    this.modifyBehavior = function(data){
+        for(idx in data){
+            if(idx === "shouldSendHeartbeats"){
+                this.shouldSendHeartbeats = data[idx];
+            }
+            else if(idx === "shouldExpectHeartbeats"){
+                this.shouldExpectHeartbeats = data[idx];
+            }
+            else if(idx === "shouldRespondToLogon"){
+                this.shouldRespondToLogon = data[idx];
+            }
+        }
+        _.each(self.stateListener, function(listener){
+            listener(data);
+        });
+    }
+
 
     //behavior control variables
     this.shouldSendHeartbeats = options.shouldSendHeartbeats || true;
     this.shouldExpectHeartbeats = options.shouldExpectHeartbeats || true;
     this.shouldRespondToLogon = options.shouldRespondToLogon || true;
-    this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
-    this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
 
     //options
     var defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
+    this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
+    this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
     this.datastore = options.datastore || new function () {
         this.add = function(data){};
         this.each = function(){};
@@ -358,14 +415,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     this.errorListener = [];
     
     
-    //callback subscription methods
-    this.onMsg = function(callback){ self.msgListener.push(callback); }
-    this.onOutMsg = function(callback){ self.outMsgListener.push(callback); }
-    this.onError = function(callback){ self.errorListener.push(callback); }
-    this.onStateChange = function(callback){ self.stateListener.push(callback); }
-    this.onEndSession = function(callback){ self.endSessionListener.push(callback); }
-    
-    //public methods
+    //internal methods (non-public)
     this.sendError = function(type, msg){
         _.each(self.errorListener, function(listener){
             listener(type,msg);
@@ -377,6 +427,9 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         //self.endSessionListener();
     }
     
+    //endSession calls methods provided by code which wraps FixSession. It exists so the
+    //network code can supply a way to drop connection, without introducing network
+    //code to this class
     this.endSession = function(){
         //util.debug("End session Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
         clearInterval(self.heartbeatIntervalID);
@@ -386,26 +439,8 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         //self.endSessionListener();
     }
     
-    this.sendMsg = function(msg){
-        var fix = _.clone(msg);
-        
-        self.timeOfLastOutgoing = new Date().getTime();
-        var prefil = {8:self.fixVersion, 49:self.senderCompID, 56:self.targetCompID, 34:(self.outgoingSeqNum++).toString(), 52: new Date().getTime() };
-        
-        _.extend(prefil,fix);
-        _.each(self.stateListener, function(listener){
-            listener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
-        });
-        _.each(self.outMsgListener, function(listener){
-            listener(prefil);
-        });
-        //self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
-        //self.outMsgListener(prefil);
-    }
+
     
-    this.sendLogon = function(){
-        var msg = { 35:"A" };
-        self.sendMsg(msg);
-    }
+    
     
 }
