@@ -5,8 +5,56 @@
 var util = require('util');
 var net = require('net');
 var fixutils = require('./fixutils.js');
+var framedecoder = require('./FIXFrameDecoder');
 var _ = require('./deps/underscore-min.js');
 
+/*==================================================*/
+/*====================FIXServer====================*/
+/*==================================================*/
+exports.FIXServer = function(compID, options){
+        var self = this;
+
+        var servers = {};
+        var server = net.createServer(function(socket){
+            //connected
+            var frameDecoder = new framedecoder.FIXFrameDecoder();
+            var fixSession = null;
+            
+            socket.on('data',function(data){
+                frameDecoder.onMsg(function(msg){
+                    if(fixSession === null){
+                        var fixVersion = msg[8];
+                        var senderCompID = msg[49];
+                        var targetCompID = msg[52];
+                        
+                        servers[fixSession.getID()] = fixSession;
+                        fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
+                        
+                        //TODOs
+                        //session.onMsg(msg) -> server.onMsg(sender,target,msg)
+                    }
+                    
+                    fixSession.processIncomingMsg(msg);
+                });
+                
+                frameDecoder.processData(data);
+            });
+            
+            socket.on('end', function(){
+                delete servers[fixSession.getID()];
+                session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+            });
+        });
+        
+        this.listen = function(){
+            //server.listen.apply(server,arguments);
+            server.listen(arguments);
+        };
+}
+
+/*==================================================*/
+/*====================FIXClient====================*/
+/*==================================================*/
 exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
     
     var self = this;
@@ -55,7 +103,7 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
         self.socket = net.createConnection(options,function(){
             
             //client connected, create fix session
-            var fixFrameDecoder = new FixFrameDecoder();
+            var fixFrameDecoder = new framedecoder.FixFrameDecoder();
 
             session.onOutMsg(function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
@@ -77,16 +125,34 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
                 });
             });
             
+            socket.on('end',function(data){
+               session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+            });
+            
             //pass on this session to client
-            listener(session);
+            listener(self);
             
         });
     }
 }
 
+/*==================================================*/
+/*====================FIXSession====================*/
+/*==================================================*/
 exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
 
     /*******Public*******/
+    
+    //required when session needs to be identified by wrappers
+    this.fixVersion = fixVersion;
+    this.senderCompID = senderCompID;
+    this.targetCompID = targetCompID;
+    
+    //[PUBLIC] get unique ID of this session
+    this.getID = function(){
+        var serverName = fixVersion+"-"+senderCompID+"-"+targetCompID;
+        return serverName;
+    }
     
     //callback subscription methods
     //[PUBLIC] listen to incoming messages (user apps subscribe here)
@@ -157,6 +223,11 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
                 this.shouldRespondToLogon = data[idx];
             }
         }
+        
+        if(self.shouldSendHeartbeats === false && self.shouldExpectHeartbeats === false){
+            clearInterval(self.heartbeatIntervalID);
+        }
+        
         _.each(self.stateListener, function(listener){
             listener(data);
         });
@@ -444,8 +515,9 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
     this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
     this.datastore = options.datastore || new function () {
-        this.add = function(data){};
-        this.each = function(){};
+        var dataarray = [];
+        this.add = function(data){dataarray.push(data);};
+        this.each = function(func){_.each(dataarray,func);};
     } ;
 
 
