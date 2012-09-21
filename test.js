@@ -14,7 +14,7 @@ function clientServerTest(){
     });
     server.listen(1234);
     
-    var client = new fix.FIXClient("4.2","CLIENT","SERVER",{});
+    var client = new fix.FIXClient("FIX.4.2","CLIENT","SERVER",{});
     client.createConnection({port:1234}, function(session){
         session.onMsg(function(msg){
             util.log("=====CLIENT:"+msg);

@@ -6,6 +6,7 @@ var _ = require('./deps/underscore-min.js');
 
 //static vars
 var SOHCHAR = String.fromCharCode(1);
+//TODO remove the need to use standard tag names: XXX.Y.Y
 var ENDOFTAG8 = 10;
 var STARTOFTAG9VAL = ENDOFTAG8 + 2;
 var SIZEOFTAG10 = 8;

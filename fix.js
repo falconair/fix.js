@@ -28,13 +28,13 @@ function FIXServer(compID, options){
             
             socket.on('data',function(data){
                 frameDecoder.onMsg(function(msg){
-                    if(perserverself.fixSession === null){
+                    if(_.isUndefined(perserverself.fixSession )){
                         var fixVersion = msg[8];
                         var senderCompID = msg[49];
                         var targetCompID = msg[52];
                         
-                        servers[perserverself.fixSession.getID()] = perserverself.fixSession;
                         perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
+                        servers[perserverself.fixSession.getID()] = perserverself.fixSession;
                         
                         //TODOs
                         //session.onMsg(msg) -> server.onMsg(sender,target,msg)
@@ -558,7 +558,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         
         //pass message on to listener
         _.each(self.msgListener, function(listener){
-            listener(prefil);
+            listener(fix);
         });
         //self.msgListener(fix);
     }
