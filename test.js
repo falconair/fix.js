@@ -7,20 +7,34 @@ var fix = require('./fix.js');
 function clientServerTest(){
     var server = new fix.FIXServer("SERVER",{});
     server.onMsg(function(id, msg){
-            util.log("=====SERVER("+id+"):"+msg);        
+            util.log(">>>>>SERVER("+id+"):"+JSON.stringify(msg));        
+    });
+    server.onOutMsg(function(id, msg){
+            util.log("<<<<<SERVER("+id+"):"+JSON.stringify(msg));        
+    });
+    server.onStateChange(function(id, msg){
+            util.log("-----SERVER("+id+"):"+JSON.stringify(msg));        
     });
     server.onError(function(id, msg){
-            util.log("-----SERVER("+id+"):"+msg);        
+            util.log(">> >> >>SERVER("+id+"):"+JSON.stringify(msg));        
     });
     server.listen(1234);
+    
+    
     
     var client = new fix.FIXClient("FIX.4.2","CLIENT","SERVER",{});
     client.createConnection({port:1234}, function(session){
         session.onMsg(function(msg){
-            util.log("=====CLIENT:"+msg);
+            util.log(">>>>>CLIENT:"+JSON.stringify(msg));
+        });
+        session.onOutMsg(function(msg){
+            util.log("<<<<<CLIENT:"+JSON.stringify(msg));
         });
         session.onError(function(msg){
-            util.log("-----CLIENT:"+msg);
+            util.log(">> >> >>CLIENT:"+JSON.stringify(msg));
+        });
+        session.onStateChange(function(msg){
+            util.log("-----CLIENT:"+JSON.stringify(msg));
         });
         
         session.sendLogon();

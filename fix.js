@@ -27,26 +27,37 @@ function FIXServer(compID, options){
             var perserverself = this;
             
             socket.on('data',function(data){
-                frameDecoder.onMsg(function(msg){
+                frameDecoder.onMsg(function(msgtxt){
+                    var msg = fixutils.convertToMap(msgtxt);
                     if(_.isUndefined(perserverself.fixSession )){
                         var fixVersion = msg[8];
                         var senderCompID = msg[49];
-                        var targetCompID = msg[52];
-                        
+                        var targetCompID = msg[56];
+
                         perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
                         servers[perserverself.fixSession.getID()] = perserverself.fixSession;
                         
-                        //TODOs
-                        //session.onMsg(msg) -> server.onMsg(sender,target,msg)
                         perserverself.fixSession.onMsg(function(msg){
                             _.each(self.msgListener, function(listener){
-                                listener(perserverself.session.getID(), msg);
+                                listener(perserverself.fixSession.getID(), msg);
                             });
                         });
                         
-                        perserverself.fixSession.onError(function(msg){
-                            _.each(self.errorListener, function(listener){
+                        perserverself.fixSession.onStateChange(function(msg){
+                            _.each(self.stateChangeListener, function(listener){
                                 listener(perserverself.fixSession.getID(), msg);
+                            });
+                        });
+                        
+                        perserverself.fixSession.onOutMsg(function(msg){
+                            _.each(self.outMsgListener, function(listener){
+                                listener(perserverself.fixSession.getID(), msg);
+                            });
+                        });
+                        
+                        perserverself.fixSession.onError(function(type,msg){
+                            _.each(self.errorListener, function(listener){
+                                listener(perserverself.fixSession.getID(), type, msg);
                             });
                         });
                     }
@@ -54,14 +65,14 @@ function FIXServer(compID, options){
                     perserverself.fixSession.processIncomingMsg(msg);
                 });
                 
-                frameDecoder.onError(function(msg){
+                frameDecoder.onError(function(type, msg){
                     _.each(self.errorListener, function(listener){
                         if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
-                            listener("UNKNOWN", msg);
+                            listener("UNKNOWN", type, msg);
                             socket.end();
                         }
                         else{
-                            listener(perserverself.fixSession.getID(), msg);
+                            listener(perserverself.fixSession.getID(), type, msg);
                         }
                     });
                 });
@@ -79,6 +90,12 @@ function FIXServer(compID, options){
         
         this.msgListener = [];
         this.onMsg = function(callback){ self.msgListener.push(callback);}
+        
+        this.stateChangeListener = [];
+        this.onStateChange = function(callback){ self.stateChangeListener.push(callback);}
+        
+        this.outMsgListener = [];
+        this.onOutMsg = function(callback){ self.outMsgListener.push(callback);}
         
         this.errorListener = [];
         this.onError = function(callback){ self.errorListener.push(callback);}
@@ -163,7 +180,8 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             
             self.socket.on('data',function(data){
                 //TODO, convert to FIX
-                fixFrameDecoder.onMsg(function(data){
+                fixFrameDecoder.onMsg(function(datatxt){
+                    var data = fixutils.convertToMap(datatxt);
                     session.processIncomingMsg(data);
                 });
                 fixFrameDecoder.processData(data);
@@ -186,6 +204,7 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
 /*====================FIXSession====================*/
 /*==================================================*/
 function FIXSession (fixVersion, senderCompID, targetCompID, options){
+    var self = this;
 
     /*******Public*******/
     
@@ -210,7 +229,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
     //[PUBLIC] get unique ID of this session
     this.getID = function(){
-        var serverName = fixVersion+"-"+senderCompID+"-"+targetCompID;
+        var serverName = self.fixVersion+"-"+self.senderCompID+"-"+self.targetCompID;
         return serverName;
     }
     
@@ -259,7 +278,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
     //[PUBLIC] Sends logon FIX json to counter party
     this.sendLogon = function(){
-        var msg = { 35:"A" };
+        var msg = { 35:"A", 108:20 };
         self.sendMsg(msg);
     }
 
@@ -293,10 +312,6 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             listener(data);
         });
     }
-
-
-    
-    var self = this;
 
     
     //[PUBLIC] process incoming messages
