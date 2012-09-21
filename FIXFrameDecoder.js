@@ -2,6 +2,7 @@
 
 var util = require('util');
 var fixutil = require('./fixutils.js');
+var _ = require('./deps/underscore-min.js');
 
 //static vars
 var SOHCHAR = String.fromCharCode(1);
@@ -9,7 +10,10 @@ var ENDOFTAG8 = 10;
 var STARTOFTAG9VAL = ENDOFTAG8 + 2;
 var SIZEOFTAG10 = 8;
 
-exports.FixFrameDecoder = function FixFrameDecoder(){
+exports.FixFrameDecoder = FixFrameDecoder;
+
+
+function FixFrameDecoder(){
     
     this.buffer = '';
     var self = this;

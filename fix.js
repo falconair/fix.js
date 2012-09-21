@@ -8,60 +8,103 @@ var fixutils = require('./fixutils.js');
 var framedecoder = require('./FIXFrameDecoder');
 var _ = require('./deps/underscore-min.js');
 
+
+exports.FIXServer = FIXServer;
+exports.FIXClient = FIXClient;
+exports.FIXSession = FIXSession;
+
 /*==================================================*/
 /*====================FIXServer====================*/
 /*==================================================*/
-exports.FIXServer = function(compID, options){
+function FIXServer(compID, options){
         var self = this;
 
         var servers = {};
         var server = net.createServer(function(socket){
             //connected
-            var frameDecoder = new framedecoder.FIXFrameDecoder();
+            var frameDecoder = new framedecoder.FixFrameDecoder();
             var fixSession = null;
+            var perserverself = this;
             
             socket.on('data',function(data){
                 frameDecoder.onMsg(function(msg){
-                    if(fixSession === null){
+                    if(perserverself.fixSession === null){
                         var fixVersion = msg[8];
                         var senderCompID = msg[49];
                         var targetCompID = msg[52];
                         
-                        servers[fixSession.getID()] = fixSession;
-                        fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
+                        servers[perserverself.fixSession.getID()] = perserverself.fixSession;
+                        perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
                         
                         //TODOs
                         //session.onMsg(msg) -> server.onMsg(sender,target,msg)
+                        perserverself.fixSession.onMsg(function(msg){
+                            _.each(self.msgListener, function(listener){
+                                listener(perserverself.session.getID(), msg);
+                            });
+                        });
+                        
+                        perserverself.fixSession.onError(function(msg){
+                            _.each(self.errorListener, function(listener){
+                                listener(perserverself.fixSession.getID(), msg);
+                            });
+                        });
                     }
                     
-                    fixSession.processIncomingMsg(msg);
+                    perserverself.fixSession.processIncomingMsg(msg);
+                });
+                
+                frameDecoder.onError(function(msg){
+                    _.each(self.errorListener, function(listener){
+                        if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
+                            listener("UNKNOWN", msg);
+                            socket.end();
+                        }
+                        else{
+                            listener(perserverself.fixSession.getID(), msg);
+                        }
+                    });
                 });
                 
                 frameDecoder.processData(data);
             });
             
             socket.on('end', function(){
-                delete servers[fixSession.getID()];
-                session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+                if(!_.isUndefined(perserverself.fixSession)){
+                    delete servers[perserverself.fixSession.getID()];
+                    perserverself.fixSession.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+                }
             });
         });
         
+        this.msgListener = [];
+        this.onMsg = function(callback){ self.msgListener.push(callback);}
+        
+        this.errorListener = [];
+        this.onError = function(callback){ self.errorListener.push(callback);}
+        
         this.listen = function(){
-            //server.listen.apply(server,arguments);
-            server.listen(arguments);
+            server.listen.apply(server,arguments);
+            //server.listen(arguments);
         };
 }
 
 /*==================================================*/
 /*====================FIXClient====================*/
 /*==================================================*/
-exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
+function FIXClient(fixVersion, senderCompID, targetCompID, options){
     
     var self = this;
     var socket = null;
     var session = new FIXSession(fixVersion, senderCompID, targetCompID, options);
     
     /*******Public*******/
+    
+    //[PUBLIC] get unique ID of this session
+    this.getID = function(){
+        var serverName = fixVersion+"-"+senderCompID+"-"+targetCompID;
+        return serverName;
+    }
     
     //callback subscription methods
     //[PUBLIC] listen to incoming messages (user apps subscribe here)
@@ -107,15 +150,18 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
 
             session.onOutMsg(function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
-                socket.write(outstr);
+                self.socket.write(outstr);
                 
             });
             session.onEndSession(function(){
-                socket.end();
+                self.socket.end();
             });
 
+            self.socket.on('connect', function(){
+                util.debug("connected");
+            });
             
-            socket.on('data',function(data){
+            self.socket.on('data',function(data){
                 //TODO, convert to FIX
                 fixFrameDecoder.onMsg(function(data){
                     session.processIncomingMsg(data);
@@ -125,7 +171,7 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
                 });
             });
             
-            socket.on('end',function(data){
+            self.socket.on('end',function(data){
                session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
             });
             
@@ -139,7 +185,7 @@ exports.FIXClient = function(fixVersion, senderCompID, targetCompID, options){
 /*==================================================*/
 /*====================FIXSession====================*/
 /*==================================================*/
-exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
+function FIXSession (fixVersion, senderCompID, targetCompID, options){
 
     /*******Public*******/
     
@@ -147,6 +193,20 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     this.fixVersion = fixVersion;
     this.senderCompID = senderCompID;
     this.targetCompID = targetCompID;
+    this.options = _.defaults(options,{shouldSendHeartbeats:true,
+                              shouldExpectHeartbeats:true,
+                              shouldRespondToLogon:true,
+                              defaultHeartbeatSeconds:30,
+                              incomingSeqNum:1,
+                              outgoingSeqNum:1,
+                              isDuplicateFunc:function(){return false},
+                              isAuthenticFunc:function(){return true},
+                              datastore:new function () {
+                                    var dataarray = [];
+                                    this.add = function(data){dataarray.push(data);};
+                                    this.each = function(func){_.each(dataarray,func);};
+                                },
+                              });
     
     //[PUBLIC] get unique ID of this session
     this.getID = function(){
@@ -182,8 +242,9 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     this.sendMsg = function(msg){
         var fix = _.clone(msg);
         
-        self.timeOfLastOutgoing = new Date().getTime();
-        var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:(self.outgoingSeqNum++).toString(), 52: new Date().getTime() };
+        options.timeOfLastOutgoing = new Date().getTime();
+        var seqn = options.outgoingSeqNum++;
+        var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
         
         _.extend(prefil,fix);
         _.each(self.stateListener, function(listener){
@@ -205,14 +266,14 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     //[PUBLIC] Sends logoff FIX json to counter party
     this.sendLogoff = function(){
         var msg = { 35:"5" };
-        self.isLogoutRequested = true;
+        options.isLogoutRequested = true;
         self.sendMsg(msg);
     }
     
     //[PUBLIC] Modify's one or more 'behabior' control variables.
     //  Neverever used outside of testing
     this.modifyBehavior = function(data){
-        for(idx in data){
+        for(var idx in data){
             if(idx === "shouldSendHeartbeats"){
                 this.shouldSendHeartbeats = data[idx];
             }
@@ -224,7 +285,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
             }
         }
         
-        if(self.shouldSendHeartbeats === false && self.shouldExpectHeartbeats === false){
+        if(options.shouldSendHeartbeats === false && options.shouldExpectHeartbeats === false){
             clearInterval(self.heartbeatIntervalID);
         }
         
@@ -286,14 +347,14 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
                     //console.log("DEBUG:"+(currentTime-self.timeOfLastOutgoing)+">"+heartbeatInMilliSeconds);   
     
                     //==send heartbeats
-                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && self.shouldSendHeartbeats) {
+                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && options.shouldSendHeartbeats) {
                         self.sendMsg({
                                 '35': '0'
                             }); //heartbeat
                     }
     
                     //==ask counter party to wake up
-                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.shouldExpectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& options.shouldExpectHeartbeats) {
                         _.each(self.stateListener, function(listener){
                             listener({testRequestID:self.testRequestID});
                         });
@@ -305,7 +366,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
                     }
     
                     //==counter party might be dead, kill connection
-                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && self.shouldExpectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && options.shouldExpectHeartbeats) {
                         var error = '[FATAL] No heartbeat from counter party in milliseconds ' + heartbeatInMilliSeconds * 1.5;
                         //util.debug("Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
                         util.log(error);
@@ -331,7 +392,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         
         
         //store msg to datastore
-        self.datastore.add(fix);
+        options.datastore.add(fix);
         
         //==Confirm message contains required fields (mainly seqno, time, etc.)
         if(!_.has(fix,34) || !_.has(fix,35) || !_.has(fix,49) || !_.has(fix,56) || !_.has(fix,52) ){
@@ -347,10 +408,10 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         if (msgType === '4' && _.isUndefined(fix['123']) || fix['123'] === 'N') {
             var resetseqnostr = fix['36'];//TODO what if 36 isn't available
             var resetseqno = parseInt(resetseqno, 10);
-            if (resetseqno >= self.incomingSeqNum) {
-                self.incomingSeqNum = resetseqno
+            if (resetseqno >= options.incomingSeqNum) {
+                options.incomingSeqNum = resetseqno
                 _.each(self.stateListener, function(listener){
-                    listener({incomingSeqNum:self.incomingSeqNum});
+                    listener({incomingSeqNum:options.incomingSeqNum});
                 });
                 //self.stateListener({incomingSeqNum:self.incomingSeqNum});
             } else {
@@ -366,23 +427,23 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         var msgSeqNum = parseInt(msgSeqNumStr, 10);
         
         //==expected sequence number
-        if (msgSeqNum === self.incomingSeqNum) {
-            self.incomingSeqNum++;
+        if (msgSeqNum === options.incomingSeqNum) {
+            options.incomingSeqNum++;
             self.isResendRequested = false;
             _.each(self.stateListener, function(listener){
-                listener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
+                listener({incomingSeqNum:options.incomingSeqNum, isResendRequested:self.isResendRequested});
             });
             //self.stateListener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
         }
         //less than expected
-        else if (msgSeqNum < self.incomingSeqNum) {
+        else if (msgSeqNum < options.incomingSeqNum) {
             //ignore posdup
             if (fix['43'] === 'Y') {
                 return;//TODO handle this
             }
             //if not posdup, error
             else {
-                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + self.incomingSeqNum+ ') : ' + JSON.stringify(fix);
+                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + options.incomingSeqNum+ ') : ' + JSON.stringify(fix);
                 util.log(error);
                 self.sendError("FATAL",error);
                 return;
@@ -394,7 +455,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
             if (msgType === '2') {
                 //TODO remove duplication in resend processor
                 //get list of msgs from archive and send them out, but gap fill admin msgs
-                self.datastore.each(function(json){
+                options.datastore.each(function(json){
                     var _msgType = json[35];
                     var _seqNo = json[34];
                     if (_.include(['A', '5', '2', '0', '1', '4'], _msgType)) {
@@ -434,8 +495,8 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
             var newSeqNoStr = fix['36'];
             var newSeqNo = parseInt(newSeqNoStr, 10);
 
-            if (newSeqNo >= self.incomingSeqNum) {
-                self.incomingSeqNum = newSeqNo;
+            if (newSeqNo >= options.incomingSeqNum) {
+                options.incomingSeqNum = newSeqNo;
                 _.each(self.stateListener, function(listener){
                     listener({incomingSeqNum:self.incomingSeqNum});
                 });
@@ -463,7 +524,7 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
         if (msgType === '2') {
             //TODO remove duplication in resend processor
             //get list of msgs from archive and send them out, but gap fill admin msgs
-            self.datastore.each(function(json){
+            options.datastore.each(function(json){
                     var _msgType = json[35];
                     var _seqNo = json[34];
                     if (_.include(['A', '5', '2', '0', '1', '4'], _msgType)) {
@@ -506,19 +567,19 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     /*******Private*******/
     
     //behavior control variables
-    var shouldSendHeartbeats = options.shouldSendHeartbeats || true;
-    var shouldExpectHeartbeats = options.shouldExpectHeartbeats || true;
-    var shouldRespondToLogon = options.shouldRespondToLogon || true;
+    //var shouldSendHeartbeats = _.isUndefined(options.shouldSendHeartbeats) || true;
+    //var shouldExpectHeartbeats = _.isUndefined(options.shouldExpectHeartbeats) || true;
+    //var shouldRespondToLogon = _.isUndefined(options.shouldRespondToLogon) || true;
 
     //options
-    var defaultHeartbeatSeconds = options.defaultHeartbeatSeconds || 30 ;
-    this.isDuplicateFunc = options.isDuplicateFunc || function () {return false;} ;
-    this.isAuthenticFunc = options.isAuthenticFunc || function () {return true;} ;
-    this.datastore = options.datastore || new function () {
+    //var defaultHeartbeatSeconds = _.isUndefined(options.defaultHeartbeatSeconds) || 30 ;
+    //this.isDuplicateFunc = _.isUndefined(options.isDuplicateFunc) || function () {return false;} ;
+    //this.isAuthenticFunc = _.isUndefined(options.isAuthenticFunc) || function () {return true;} ;
+    /*this.datastore = _.isUndefined(options.datastore) || new function () {
         var dataarray = [];
         this.add = function(data){dataarray.push(data);};
         this.each = function(func){_.each(dataarray,func);};
-    } ;
+    } ;*/
 
 
     //transient variable (nothing to do with state)
@@ -529,8 +590,8 @@ exports.FIXSession = function(fixVersion, senderCompID, targetCompID, options){
     var timeOfLastIncoming = new Date().getTime();
     var timeOfLastOutgoing = new Date().getTime();
     var testRequestID = 1;
-    var incomingSeqNum = options.incomingSeqNum || 1;
-    var outgoingSeqNum = options.outgoingSeqNum || 1;
+    //var incomingSeqNum = _.isUndefined(options.incomingSeqNum) || 1;
+    //var outgoingSeqNum = _.isUndefined(options.outgoingSeqNum) || 1;
     var isResendRequested = false;
     var isLogoutRequested = false;
 

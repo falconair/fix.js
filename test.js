@@ -1,7 +1,31 @@
 #!/usr/bin/env node
 
 var assert = require('assert');
+var util = require('util');
 var fix = require('./fix.js');
+
+function clientServerTest(){
+    var server = new fix.FIXServer("SERVER",{});
+    server.onMsg(function(id, msg){
+            util.log("=====SERVER("+id+"):"+msg);        
+    });
+    server.onError(function(id, msg){
+            util.log("-----SERVER("+id+"):"+msg);        
+    });
+    server.listen(1234);
+    
+    var client = new fix.FIXClient("4.2","CLIENT","SERVER",{});
+    client.createConnection({port:1234}, function(session){
+        session.onMsg(function(msg){
+            util.log("=====CLIENT:"+msg);
+        });
+        session.onError(function(msg){
+            util.log("-----CLIENT:"+msg);
+        });
+        
+        session.sendLogon();
+    });
+}
 
 function fixSessionTest(){
     var f = new fix.FIXSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
@@ -76,4 +100,5 @@ function testClient(){
 
 //Execute tests
 //fixSessionTest();
-fixSessionTest2();
+//fixSessionTest2();
+clientServerTest();
