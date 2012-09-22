@@ -2,7 +2,7 @@
 
 var assert = require('assert');
 var util = require('util');
-var fix = require('./fix.js');
+var fix = require('../fix.js');
 
 function clientServerTest(){
     var server = new fix.FIXServer("SERVER",{});

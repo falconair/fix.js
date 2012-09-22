@@ -101,7 +101,6 @@ function FixFrameDecoder(){
                 return;
             }
 
-
             _.each(self.msgListener, function(listener){
                 listener(msg);
             });

@@ -26,56 +26,61 @@ function FIXServer(compID, options){
             var fixSession = null;
             var perserverself = this;
             
-            socket.on('data',function(data){
-                frameDecoder.onMsg(function(msgtxt){
-                    var msg = fixutils.convertToMap(msgtxt);
-                    if(_.isUndefined(perserverself.fixSession )){
-                        var fixVersion = msg[8];
-                        var senderCompID = msg[49];
-                        var targetCompID = msg[56];
+            frameDecoder.onMsg(function(msgtxt){
+                var msg = fixutils.convertToMap(msgtxt);
 
-                        perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, options);
-                        servers[perserverself.fixSession.getID()] = perserverself.fixSession;
-                        
-                        perserverself.fixSession.onMsg(function(msg){
-                            _.each(self.msgListener, function(listener){
-                                listener(perserverself.fixSession.getID(), msg);
-                            });
-                        });
-                        
-                        perserverself.fixSession.onStateChange(function(msg){
-                            _.each(self.stateChangeListener, function(listener){
-                                listener(perserverself.fixSession.getID(), msg);
-                            });
-                        });
-                        
-                        perserverself.fixSession.onOutMsg(function(msg){
-                            _.each(self.outMsgListener, function(listener){
-                                listener(perserverself.fixSession.getID(), msg);
-                            });
-                        });
-                        
-                        perserverself.fixSession.onError(function(type,msg){
-                            _.each(self.errorListener, function(listener){
-                                listener(perserverself.fixSession.getID(), type, msg);
-                            });
-                        });
-                    }
+                if(_.isUndefined(perserverself.fixSession )){
+                    var fixVersion = msg[8];
+                    var senderCompID = msg[49];
+                    var targetCompID = msg[56];
+
+                    var extendedOptions = _.extend(options,{shouldRespondToLogon:true});
+                    perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
+                    servers[perserverself.fixSession.getID()] = perserverself.fixSession;
                     
-                    perserverself.fixSession.processIncomingMsg(msg);
-                });
-                
-                frameDecoder.onError(function(type, msg){
-                    _.each(self.errorListener, function(listener){
-                        if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
-                            listener("UNKNOWN", type, msg);
-                            socket.end();
-                        }
-                        else{
-                            listener(perserverself.fixSession.getID(), type, msg);
-                        }
+                    perserverself.fixSession.onMsg(function(msg){
+                        _.each(self.msgListener, function(listener){
+                            listener(perserverself.fixSession.getID(), msg);
+                        });
                     });
+                    
+                    perserverself.fixSession.onStateChange(function(msg){
+                        _.each(self.stateChangeListener, function(listener){
+                            listener(perserverself.fixSession.getID(), msg);
+                        });
+                    });
+                    
+                    perserverself.fixSession.onOutMsg(function(msg){
+                        var outstr = fixutils.convertMapToFIX(msg);
+                        socket.write(outstr);
+                        _.each(self.outMsgListener, function(listener){
+                            listener(perserverself.fixSession.getID(), msg);
+                        });
+                    });
+                    
+                    perserverself.fixSession.onError(function(type,msg){
+                        _.each(self.errorListener, function(listener){
+                            listener(perserverself.fixSession.getID(), type, msg);
+                        });
+                    });
+                }
+                
+                perserverself.fixSession.processIncomingMsg(msg);
+            });
+            
+            frameDecoder.onError(function(type, msg){
+                _.each(self.errorListener, function(listener){
+                    if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
+                        listener("UNKNOWN", type, msg);
+                        socket.end();
+                    }
+                    else{
+                        listener(perserverself.fixSession.getID(), type, msg);
+                    }
                 });
+            });
+            
+            socket.on('data',function(data){
                 
                 frameDecoder.processData(data);
             });
@@ -164,7 +169,14 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             
             //client connected, create fix session
             var fixFrameDecoder = new framedecoder.FixFrameDecoder();
+            fixFrameDecoder.onMsg(function(datatxt){
+                var data = fixutils.convertToMap(datatxt);
+                session.processIncomingMsg(data);
+            });
+            fixFrameDecoder.onError(function(type, error){
+            });
 
+            //TODO users of clients need to subscribe to outgoing/incoming msgs, error, etc.
             session.onOutMsg(function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
                 self.socket.write(outstr);
@@ -175,18 +187,11 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             });
 
             self.socket.on('connect', function(){
-                util.debug("connected");
             });
             
             self.socket.on('data',function(data){
-                //TODO, convert to FIX
-                fixFrameDecoder.onMsg(function(datatxt){
-                    var data = fixutils.convertToMap(datatxt);
-                    session.processIncomingMsg(data);
-                });
                 fixFrameDecoder.processData(data);
-                fixFrameDecoder.onError(function(type, error){
-                });
+                
             });
             
             self.socket.on('end',function(data){
@@ -214,7 +219,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     this.targetCompID = targetCompID;
     this.options = _.defaults(options,{shouldSendHeartbeats:true,
                               shouldExpectHeartbeats:true,
-                              shouldRespondToLogon:true,
+                              shouldRespondToLogon:false,
                               defaultHeartbeatSeconds:30,
                               incomingSeqNum:1,
                               outgoingSeqNum:1,
@@ -226,6 +231,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                                     this.each = function(func){_.each(dataarray,func);};
                                 },
                               });
+
     
     //[PUBLIC] get unique ID of this session
     this.getID = function(){
@@ -316,6 +322,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
     //[PUBLIC] process incoming messages
     this.processIncomingMsg = function(fix){
+
         self.timeOfLastIncoming = new Date().getTime();
         _.each(self.stateListener, function(listener){
             listener({timeOfLastIncoming:self.timeOfLastIncoming});
@@ -343,7 +350,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 return;
             }
             else{ //log on message
-                var heartbeatInMilliSeconds = defaultHeartbeatSeconds;
+                var heartbeatInMilliSeconds = options.defaultHeartbeatSeconds;
                 if(!_.has(fix,108)){
                     var errorMsg = '[ERROR] Heartbeat message missing from logon, will use default:' + JSON.stringify(fix);
                     util.error(errorMsg);
@@ -359,7 +366,6 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 self.heartbeatIntervalID = setInterval(function () {
                     var currentTime = new Date().getTime();
                     
-                    //console.log("DEBUG:"+(currentTime-self.timeOfLastOutgoing)+">"+heartbeatInMilliSeconds);   
     
                     //==send heartbeats
                     if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && options.shouldSendHeartbeats) {
@@ -383,7 +389,6 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                     //==counter party might be dead, kill connection
                     if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && options.shouldExpectHeartbeats) {
                         var error = '[FATAL] No heartbeat from counter party in milliseconds ' + heartbeatInMilliSeconds * 1.5;
-                        //util.debug("Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
                         util.log(error);
                         self.sendError("FATAL",error);
                         return;
@@ -391,7 +396,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
                 
-                if(self.shouldRespondToLogon){
+                if(options.shouldRespondToLogon === true){
                     self.sendMsg({35:"A", 108:fix[108]}); //logon response
                 }
                 
@@ -417,6 +422,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             self.sendError("WARN",errorMsg);
             return;
         }
+        
+        
         var msgType = fix['35'];
         
         //==Process seq-reset (no gap-fill)
@@ -443,6 +450,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         
         //==expected sequence number
         if (msgSeqNum === options.incomingSeqNum) {
+
             options.incomingSeqNum++;
             self.isResendRequested = false;
             _.each(self.stateListener, function(listener){
@@ -452,6 +460,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         }
         //less than expected
         else if (msgSeqNum < options.incomingSeqNum) {
+
             //ignore posdup
             if (fix['43'] === 'Y') {
                 return;//TODO handle this
@@ -466,6 +475,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         }
         //==greater than expected
         else {
+
             //is it resend request?
             if (msgType === '2') {
                 //TODO remove duplication in resend processor
@@ -579,36 +589,17 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     }
     
     
-    /*******Private*******/
-    
-    //behavior control variables
-    //var shouldSendHeartbeats = _.isUndefined(options.shouldSendHeartbeats) || true;
-    //var shouldExpectHeartbeats = _.isUndefined(options.shouldExpectHeartbeats) || true;
-    //var shouldRespondToLogon = _.isUndefined(options.shouldRespondToLogon) || true;
-
-    //options
-    //var defaultHeartbeatSeconds = _.isUndefined(options.defaultHeartbeatSeconds) || 30 ;
-    //this.isDuplicateFunc = _.isUndefined(options.isDuplicateFunc) || function () {return false;} ;
-    //this.isAuthenticFunc = _.isUndefined(options.isAuthenticFunc) || function () {return true;} ;
-    /*this.datastore = _.isUndefined(options.datastore) || new function () {
-        var dataarray = [];
-        this.add = function(data){dataarray.push(data);};
-        this.each = function(func){_.each(dataarray,func);};
-    } ;*/
-
 
     //transient variable (nothing to do with state)
     this.heartbeatIntervalID = "";
 
     //runtime variables 
-    var isLoggedIn = false;
-    var timeOfLastIncoming = new Date().getTime();
-    var timeOfLastOutgoing = new Date().getTime();
-    var testRequestID = 1;
-    //var incomingSeqNum = _.isUndefined(options.incomingSeqNum) || 1;
-    //var outgoingSeqNum = _.isUndefined(options.outgoingSeqNum) || 1;
-    var isResendRequested = false;
-    var isLogoutRequested = false;
+    this.isLoggedIn = false;
+    this.timeOfLastIncoming = new Date().getTime();
+    this.timeOfLastOutgoing = new Date().getTime();
+    this.testRequestID = 1;
+    this.isResendRequested = false;
+    this.isLogoutRequested = false;
 
     
     //callback listeners
@@ -636,7 +627,6 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     //network code can supply a way to drop connection, without introducing network
     //code to this class
     this.endSession = function(){
-        //util.debug("End session Interval ID:"+JSON.stringify(self.heartbeatIntervalID));
         clearInterval(self.heartbeatIntervalID);
         _.each(self.endSessionListener, function(listener){
             listener();

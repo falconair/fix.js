@@ -2,7 +2,7 @@
 
 var fs = require('fs');
 var util = require('util');
-var fix = require("./fix.js");
+var fix = require("../fix.js");
 
 if(process.argv.length <1){
     util.log("Usage: node autotester.jar <testcase>");
