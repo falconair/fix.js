@@ -223,8 +223,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                               defaultHeartbeatSeconds:30,
                               incomingSeqNum:1,
                               outgoingSeqNum:1,
-                              isDuplicateFunc:function(){return false},
-                              isAuthenticFunc:function(){return true},
+                              isDuplicateFunc:{confirm:function(){return false}},
+                              isAuthenticFunc:{confirm:function(){return true}},
                               datastore:new function () {
                                     var dataarray = [];
                                     this.add = function(data){dataarray.push(data);};
