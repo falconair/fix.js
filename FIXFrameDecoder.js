@@ -1,6 +1,7 @@
 "use strict";
 
 var util = require('util');
+var events = require('events');
 var fixutil = require('./fixutils.js');
 var _ = require('./deps/underscore-min.js');
 
@@ -19,9 +20,6 @@ function FixFrameDecoder(){
     this.buffer = '';
     var self = this;
     
-    this.onMsg = function(callback){ self.msgListener.push(callback); }
-    this.onError = function(callback){ self.errorListener.push(callback); }
-
     this.processData = function(data){
         
         self.buffer = self.buffer + data;
@@ -40,7 +38,7 @@ function FixFrameDecoder(){
                 var error = '[ERROR] Unable to find the location of the end of tag 9. Message probably malformed: '
                     + self.buffer.toString();
                 util.log(error);
-                self.sendError("FATAL",error);
+                self.emit('error','FATAL',error);
                 return;
             }
 
@@ -51,7 +49,7 @@ function FixFrameDecoder(){
                 var error ='[ERROR] Over 100 character received but body length still not extractable.  Message malformed: '
                     + databuffer.toString();
                 util.log(error);
-                self.sendError("FATAL",error);
+                self.emit('error','FATAL',error);
                 return;
             }
 
@@ -67,7 +65,7 @@ function FixFrameDecoder(){
                 var error = "[ERROR] Unable to parse bodyLength field. Message probably malformed: bodyLength='"
                     + _bodyLengthStr + "', msg=" + self.buffer.toString()
                 util.log(error);
-                self.sendError("FATAL",error);
+                self.emit('error','FATAL',error);
                 return;
             }
 
@@ -97,23 +95,12 @@ function FixFrameDecoder(){
                 var error = '[WARNING] Discarding message because body length or checksum are wrong (expected checksum: '
                     + calculatedChecksum + ', received checksum: ' + extractedChecksum + '): [' + msg + ']'
                 util.log(error);
-                self.sendError("ERROR",error);
+                self.emit('error','ERROR',error);
                 return;
             }
 
-            _.each(self.msgListener, function(listener){
-                listener(msg);
-            });
+            self.emit('msg',msg);
         }
     }
-    
-    this.msgListener = [];
-    this.errorListener = [];
-    
-    this.sendError = function(type, msg){
-        _.each(self.errorListener, function(listener){
-            listener(type,msg);
-        });
-    }
-
 }
+util.inherits(FixFrameDecoder, events.EventEmitter);

@@ -59,10 +59,10 @@ fs.readFile(testcase, function(err,data){
             var target = nextfix.fix["49"];
             
             sess = new fix.FIXSession(version,sender,target, {});
-            sess.onStateChange(function(state){
+            sess.on('state',function(state){
                 util.log("State change: "+JSON.stringify(state));
             });
-            sess.onOutMsg(function(act){
+            sess.on('outmsg',function(act){
                 var exp = responses.pop();
                 
                 //util.log("Expected:"+JSON.stringify(exp));

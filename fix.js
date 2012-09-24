@@ -4,6 +4,7 @@
 
 var util = require('util');
 var net = require('net');
+var events = require('events');
 var fixutils = require('./fixutils.js');
 var framedecoder = require('./FIXFrameDecoder');
 var _ = require('./deps/underscore-min.js');
@@ -26,7 +27,7 @@ function FIXServer(compID, options){
             var fixSession = null;
             var perserverself = this;
             
-            frameDecoder.onMsg(function(msgtxt){
+            frameDecoder.on('msg',function(msgtxt){
                 var msg = fixutils.convertToMap(msgtxt);
 
                 if(_.isUndefined(perserverself.fixSession )){
@@ -36,48 +37,34 @@ function FIXServer(compID, options){
 
                     var extendedOptions = _.extend(options,{shouldRespondToLogon:true});
                     perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
-                    servers[perserverself.fixSession.getID()] = perserverself.fixSession;
+                    var serverid = perserverself.fixSession.getID();
+                    servers[serverid ] = perserverself.fixSession;
                     
-                    perserverself.fixSession.onMsg(function(msg){
-                        _.each(self.msgListener, function(listener){
-                            listener(perserverself.fixSession.getID(), msg);
-                        });
-                    });
+                    perserverself.fixSession.on('msg',function(msg){ self.emit('msg',serverid, msg); });
+                    perserverself.fixSession.on('state',function(msg){ self.emit('state',serverid ,msg); });
+                    perserverself.fixSession.on('error',function(type,msg){ self.emit('error',serverid ,type,msg); });
                     
-                    perserverself.fixSession.onStateChange(function(msg){
-                        _.each(self.stateChangeListener, function(listener){
-                            listener(perserverself.fixSession.getID(), msg);
-                        });
-                    });
-                    
-                    perserverself.fixSession.onOutMsg(function(msg){
+                    perserverself.fixSession.on('outmsg',function(msg){
                         var outstr = fixutils.convertMapToFIX(msg);
                         socket.write(outstr);
-                        _.each(self.outMsgListener, function(listener){
-                            listener(perserverself.fixSession.getID(), msg);
-                        });
+                        self.emit('outmsg',serverid ,msg);
                     });
                     
-                    perserverself.fixSession.onError(function(type,msg){
-                        _.each(self.errorListener, function(listener){
-                            listener(perserverself.fixSession.getID(), type, msg);
-                        });
-                    });
                 }
                 
                 perserverself.fixSession.processIncomingMsg(msg);
             });
             
-            frameDecoder.onError(function(type, msg){
-                _.each(self.errorListener, function(listener){
-                    if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
-                        listener("UNKNOWN", type, msg);
-                        socket.end();
-                    }
-                    else{
-                        listener(perserverself.fixSession.getID(), type, msg);
-                    }
-                });
+            frameDecoder.on('error',function(type, msg){
+                if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
+                    self.emit('error','UNKNOWN',type,msg);
+                }
+                else{
+                    self.emit('error',serverid,type,msg);
+                }
+                if(type === 'FATAL'){
+                    socket.end();
+                }
             });
             
             socket.on('data',function(data){
@@ -93,23 +80,13 @@ function FIXServer(compID, options){
             });
         });
         
-        this.msgListener = [];
-        this.onMsg = function(callback){ self.msgListener.push(callback);}
-        
-        this.stateChangeListener = [];
-        this.onStateChange = function(callback){ self.stateChangeListener.push(callback);}
-        
-        this.outMsgListener = [];
-        this.onOutMsg = function(callback){ self.outMsgListener.push(callback);}
-        
-        this.errorListener = [];
-        this.onError = function(callback){ self.errorListener.push(callback);}
         
         this.listen = function(){
             server.listen.apply(server,arguments);
             //server.listen(arguments);
         };
 }
+util.inherits(FIXServer, events.EventEmitter);
 
 /*==================================================*/
 /*====================FIXClient====================*/
@@ -131,24 +108,24 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
     //callback subscription methods
     //[PUBLIC] listen to incoming messages (user apps subscribe here)
     //arguments: json object
-    this.onMsg = function(callback){ session.onMsg(callback); }
+    //this.onMsg = function(callback){ session.onMsg(callback); }
     
     //[PUBLIC] listen to outgoing messages (only used by admin apps)
     //arguments: json object
-    this.onOutMsg = function(callback){ session.onOutMsg(callback); }
+    //this.onOutMsg = function(callback){ session.onOutMsg(callback); }
     
     //[PUBLIC] listen to error messages
     //arguments: type -- (FATAL, ERROR, etc.) -- fatal means session is gone
     //arguments: description -- text description
-    this.onError = function(callback){ session.onError(callback); }
+    //this.onError = function(callback){ session.onError(callback); }
     
     //[PUBLIC] listen to state changes (only used by admin apps)
     //arguments: json object -- example: {loggedIn:true}
-    this.onStateChange = function(callback){ session.onStateChange(callback); }
+    //this.onStateChange = function(callback){ session.onStateChange(callback); }
 
     //[PUBLIC] listen to end of session alerts (only used by system apps)
     //  for example, tcp connector uses this to find out when to disconnect
-    this.onEndSession = function(callback){ session.onEndSession(callback); }
+    //this.onEndSession = function(callback){ session.onEndSession(callback); }
     
     //[PUBLIC] Sends FIX json to counter party
     this.sendMsg = function(msg){ session.sendMsg(msg); }
@@ -169,29 +146,34 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             
             //client connected, create fix session
             var fixFrameDecoder = new framedecoder.FixFrameDecoder();
-            fixFrameDecoder.onMsg(function(datatxt){
+            fixFrameDecoder.on('msg',function(datatxt){
                 var data = fixutils.convertToMap(datatxt);
                 session.processIncomingMsg(data);
             });
-            fixFrameDecoder.onError(function(type, error){
+            fixFrameDecoder.on('error',function(type, error){
+                //TODO handle
             });
 
             //TODO users of clients need to subscribe to outgoing/incoming msgs, error, etc.
-            session.onOutMsg(function(msg){
+            session.on('outmsg',function(msg){
                 var outstr = fixutils.convertMapToFIX(msg);
                 self.socket.write(outstr);
-                
+                self.emit('outmsg',msg);
             });
-            session.onEndSession(function(){
+            session.on('endsession',function(){
                 self.socket.end();
+                self.emit('endsession');
+            });
+            session.on('msg',function(msg){
+                self.emit('msg',msg);
             });
 
             self.socket.on('connect', function(){
+                self.emit('connect');
             });
             
             self.socket.on('data',function(data){
                 fixFrameDecoder.processData(data);
-                
             });
             
             self.socket.on('end',function(data){
@@ -204,6 +186,7 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
         });
     }
 }
+util.inherits(FIXClient, events.EventEmitter);
 
 /*==================================================*/
 /*====================FIXSession====================*/
@@ -212,6 +195,13 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     var self = this;
 
     /*******Public*******/
+    
+    //=======EVENTS=========//
+    //msg   :- ...on('msg', jsonobject) [listen to incoming messages (user apps subscribe here)]
+    //state :- ...on('state',jsonobject) [listen to state changes (only used by admin apps)]
+    //outmsg:- ...on('outmsg',jsonobject) [listen to outgoing messages (only used by admin apps)]
+    //error :- ...on('error',type,jsonobject) [listen to error messages, type=FATAL means connection is gone]
+    //endsession :- ...on('endsession') [listen to end of session alerts (only used by system apps)]
     
     //required when session needs to be identified by wrappers
     this.fixVersion = fixVersion;
@@ -239,27 +229,6 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         return serverName;
     }
     
-    //callback subscription methods
-    //[PUBLIC] listen to incoming messages (user apps subscribe here)
-    //arguments: json object
-    this.onMsg = function(callback){ self.msgListener.push(callback); }
-    
-    //[PUBLIC] listen to outgoing messages (only used by admin apps)
-    //arguments: json object
-    this.onOutMsg = function(callback){ self.outMsgListener.push(callback); }
-    
-    //[PUBLIC] listen to error messages
-    //arguments: type -- (FATAL, ERROR, etc.) -- fatal means session is gone
-    //arguments: description -- text description
-    this.onError = function(callback){ self.errorListener.push(callback); }
-    
-    //[PUBLIC] listen to state changes (only used by admin apps)
-    //arguments: json object -- example: {loggedIn:true}
-    this.onStateChange = function(callback){ self.stateListener.push(callback); }
-
-    //[PUBLIC] listen to end of session alerts (only used by system apps)
-    //  for example, tcp connector uses this to find out when to disconnect
-    this.onEndSession = function(callback){ self.endSessionListener.push(callback); }
     
     //non-callback methods
 
@@ -272,14 +241,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
         
         _.extend(prefil,fix);
-        _.each(self.stateListener, function(listener){
-            listener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
-        });
-        _.each(self.outMsgListener, function(listener){
-            listener(prefil);
-        });
-        //self.stateListener({timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
-        //self.outMsgListener(prefil);
+        self.emit('state', {timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
+        self.emit('outmsg',prefil);
     }
     
     //[PUBLIC] Sends logon FIX json to counter party
@@ -314,9 +277,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             clearInterval(self.heartbeatIntervalID);
         }
         
-        _.each(self.stateListener, function(listener){
-            listener(data);
-        });
+        self.emit('state', data);
     }
 
     
@@ -324,10 +285,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     this.processIncomingMsg = function(fix){
 
         self.timeOfLastIncoming = new Date().getTime();
-        _.each(self.stateListener, function(listener){
-            listener({timeOfLastIncoming:self.timeOfLastIncoming});
-        });
-        //self.stateListener({timeOfLastIncoming:self.timeOfLastIncoming});
+        self.emit('state', {timeOfLastIncoming:self.timeOfLastIncoming});
         
 
         //If not logged in
@@ -376,10 +334,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
                     //==ask counter party to wake up
                     if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& options.shouldExpectHeartbeats) {
-                        _.each(self.stateListener, function(listener){
-                            listener({testRequestID:self.testRequestID});
-                        });
-                        //self.stateListener({testRequestID:self.testRequestID});
+                        self.emit('state', {testRequestID:self.testRequestID});
                         self.sendMsg({
                                 '35': '1',
                                 '112': self.testRequestID++
@@ -402,10 +357,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 
                 //==Logon successful
                 self.isLoggedIn = true;
-                _.each(self.stateListener, function(listener){
-                    listener({isLoggedIn:self.isLoggedIn});
-                });
-                //self.stateListener({isLoggedIn:self.isLoggedIn});
+                self.emit('state', {isLoggedIn:self.isLoggedIn});
                 
             }
         }
@@ -431,11 +383,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             var resetseqnostr = fix['36'];//TODO what if 36 isn't available
             var resetseqno = parseInt(resetseqno, 10);
             if (resetseqno >= options.incomingSeqNum) {
-                options.incomingSeqNum = resetseqno
-                _.each(self.stateListener, function(listener){
-                    listener({incomingSeqNum:options.incomingSeqNum});
-                });
-                //self.stateListener({incomingSeqNum:self.incomingSeqNum});
+                options.incomingSeqNum = resetseqno;
+                self.emit('state',{incomingSeqNum:options.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
@@ -453,10 +402,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
 
             options.incomingSeqNum++;
             self.isResendRequested = false;
-            _.each(self.stateListener, function(listener){
-                listener({incomingSeqNum:options.incomingSeqNum, isResendRequested:self.isResendRequested});
-            });
-            //self.stateListener({incomingSeqNum:self.incomingSeqNum, isResendRequested:self.isResendRequested});
+            self.emit('state', {incomingSeqNum:options.incomingSeqNum, isResendRequested:self.isResendRequested});
         }
         //less than expected
         else if (msgSeqNum < options.incomingSeqNum) {
@@ -503,10 +449,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             if (self.isResendRequested === false) {
                 self.isResendRequested = true;
                 //send resend-request
-                _.each(self.stateListener, function(listener){
-                    listener({isResendRequested:self.isResendRequested});
-                });
-                //self.stateListener({isResendRequested:self.isResendRequested});
+                self.emit('state',{isResendRequested:self.isResendRequested});
                 self.sendMsg({
                         '35': '2',
                         '7': self.incomingSeqNum,
@@ -522,10 +465,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
 
             if (newSeqNo >= options.incomingSeqNum) {
                 options.incomingSeqNum = newSeqNo;
-                _.each(self.stateListener, function(listener){
-                    listener({incomingSeqNum:self.incomingSeqNum});
-                });
-                //self.stateListener({incomingSeqNum:self.incomingSeqNum});
+                self.emit('state',{incomingSeqNum:self.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
@@ -582,10 +522,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         
         
         //pass message on to listener
-        _.each(self.msgListener, function(listener){
-            listener(fix);
-        });
-        //self.msgListener(fix);
+        self.emit('msg',fix);
     }
     
     
@@ -600,27 +537,14 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     this.testRequestID = 1;
     this.isResendRequested = false;
     this.isLogoutRequested = false;
-
-    
-    //callback listeners
-    this.stateListener = [];
-    this.msgListener = [];
-    this.outMsgListener = [];
-    this.endSessionListener = [];
-    //this may only be access by method sendError(type, msg)
-    this.errorListener = [];
     
     
     //internal methods (non-public)
     this.sendError = function(type, msg){
-        _.each(self.errorListener, function(listener){
-            listener(type,msg);
-        });
-        _.each(self.endSessionListener, function(listener){
-            listener();
-        });
-        //self.errorListener(type,msg);
-        //self.endSessionListener();
+        self.emit('error',type,msg);
+        if(type === 'FATAL'){
+            self.endSession();
+        }
     }
     
     //endSession calls methods provided by code which wraps FixSession. It exists so the
@@ -628,14 +552,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     //code to this class
     this.endSession = function(){
         clearInterval(self.heartbeatIntervalID);
-        _.each(self.endSessionListener, function(listener){
-            listener();
-        });
-        //self.endSessionListener();
+        self.emit('endsession');
     }
-    
-
-    
-    
-    
 }
+util.inherits(FIXSession, events.EventEmitter);

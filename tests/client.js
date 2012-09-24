@@ -5,16 +5,16 @@ var fix = require('../fix.js');
 
 var client = new fix.FIXClient("FIX.4.2","CLIENT","SERVER",{});
 client.createConnection({port:1234}, function(session){
-    session.onMsg(function(msg){
+    session.on('msg',function(msg){
         util.log(">>>>>CLIENT:"+JSON.stringify(msg));
     });
-    session.onOutMsg(function(msg){
+    session.on('outmsg',function(msg){
         util.log("<<<<<CLIENT:"+JSON.stringify(msg));
     });
-    session.onError(function(msg){
+    session.on('error',function(msg){
         util.log(">> >> >>CLIENT:"+JSON.stringify(msg));
     });
-    session.onStateChange(function(msg){
+    session.on('state',function(msg){
         //util.log("-----CLIENT:"+JSON.stringify(msg));
     });
     

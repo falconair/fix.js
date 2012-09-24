@@ -4,47 +4,12 @@ var assert = require('assert');
 var util = require('util');
 var fix = require('../fix.js');
 
-function clientServerTest(){
-    var server = new fix.FIXServer("SERVER",{});
-    server.onMsg(function(id, msg){
-            util.log(">>>>>SERVER("+id+"):"+JSON.stringify(msg));        
-    });
-    server.onOutMsg(function(id, msg){
-            util.log("<<<<<SERVER("+id+"):"+JSON.stringify(msg));        
-    });
-    server.onStateChange(function(id, msg){
-            util.log("-----SERVER("+id+"):"+JSON.stringify(msg));        
-    });
-    server.onError(function(id, msg){
-            util.log(">> >> >>SERVER("+id+"):"+JSON.stringify(msg));        
-    });
-    server.listen(1234);
-    
-    
-    
-    var client = new fix.FIXClient("FIX.4.2","CLIENT","SERVER",{});
-    client.createConnection({port:1234}, function(session){
-        session.onMsg(function(msg){
-            util.log(">>>>>CLIENT:"+JSON.stringify(msg));
-        });
-        session.onOutMsg(function(msg){
-            util.log("<<<<<CLIENT:"+JSON.stringify(msg));
-        });
-        session.onError(function(msg){
-            util.log(">> >> >>CLIENT:"+JSON.stringify(msg));
-        });
-        session.onStateChange(function(msg){
-            util.log("-----CLIENT:"+JSON.stringify(msg));
-        });
-        
-        session.sendLogon();
-    });
-}
+
 
 function fixSessionTest(){
     var f = new fix.FIXSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
 
-    f.onOutMsg(function(msg){
+    f.on('outmsg',function(msg){
         assert.equal(msg[35],"A","Expected outgoing message to be logon 'A'");
         assert.equal(msg[8],"FIX.4.2");
         assert.equal(msg[49],"SNDRCMPID");
@@ -60,7 +25,7 @@ function fixSessionTest2(){
     var outCounter = 1;
     var f = new fix.FIXSession("FIX.4.2","SNDRCMPID","TRGTCMPID", {});
 
-    f.onOutMsg(function(msg){
+    f.on('outmsg',function(msg){
         console.log("OUT:"+JSON.stringify(msg));
         
         if(outCounter ===1){
@@ -80,11 +45,11 @@ function fixSessionTest2(){
         outCounter++;
     });
     
-    f.onError(function(msg){
+    f.on('error',function(msg){
         console.log("ERROR:"+JSON.stringify(msg));
     });
     
-    f.onMsg(function(msg){
+    f.on('msg',function(msg){
         console.log("MSG:"+JSON.stringify(msg));
     });
     
@@ -103,7 +68,7 @@ function testClient(){
         session.sendLogon();
         
         //connected
-        fix.onmsg(function(msg){
+        fix.on('msg',function(msg){
             assert.equal(msg[34],"A","Expected first message to be logon 'A'");
         });
     });
@@ -115,4 +80,3 @@ function testClient(){
 //Execute tests
 //fixSessionTest();
 //fixSessionTest2();
-clientServerTest();
