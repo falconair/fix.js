@@ -87,7 +87,7 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
 
 
     headermsgarr.push('35=' + msg['35'] , SOHCHAR);
-    headermsgarr.push('52=' + timeStamp , SOHCHAR);
+    headermsgarr.push('52=' + getUTCTimeStamp(new Date(timeStamp)) , SOHCHAR);
     headermsgarr.push('49=' + senderCompID , SOHCHAR);
     headermsgarr.push('56=' + targetCompID , SOHCHAR);
     headermsgarr.push('34=' + outgoingSeqNum , SOHCHAR);

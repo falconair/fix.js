@@ -105,6 +105,9 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
         return serverName;
     }
     
+    //TODO on('syncmsg',...) crash recovery
+    //TODO on('syncoutmsg',...) crash recovery
+    
     //callback subscription methods
     //[PUBLIC] listen to incoming messages (user apps subscribe here)
     //arguments: json object
@@ -247,7 +250,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
     //[PUBLIC] Sends logon FIX json to counter party
     this.sendLogon = function(){
-        var msg = { 35:"A", 108:20 };
+        var msg = { 35:"A", 108:20, 98:0 };
         self.sendMsg(msg);
     }
 

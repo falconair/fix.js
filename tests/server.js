@@ -3,7 +3,12 @@
 var util = require('util');
 var fix = require('../fix.js');
 
-var server = new fix.FIXServer("SERVER",{});
+var compid = "SERVER";
+if(process.argv.length > 2){
+        compid = process.argv[2];
+}
+
+var server = new fix.FIXServer(compid,{});
 server.on('msg',function(id, msg){
         util.log(">>>>>SERVER("+id+"):"+JSON.stringify(msg));        
 });
@@ -16,4 +21,4 @@ server.on('state',function(id, msg){
 server.on('error',function(id, msg){
         util.log(">> >> >>SERVER("+id+"):"+JSON.stringify(msg));        
 });
-server.listen(1234);
+server.listen(9878);

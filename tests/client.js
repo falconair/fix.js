@@ -3,8 +3,15 @@
 var util = require('util');
 var fix = require('../fix.js');
 
-var client = new fix.FIXClient("FIX.4.2","CLIENT","SERVER",{});
-client.createConnection({port:1234}, function(session){
+var sendercompid = "CLIENT";
+var sendercompid = "SERVER";
+if(process.argv.length > 3){
+        sendercompid = process.argv[2];
+        targetcompid = process.argv[3];
+}
+
+var client = new fix.FIXClient("FIX.4.2",sendercompid,targetcompid,{});
+client.createConnection({port:9878}, function(session){
     session.on('msg',function(msg){
         util.log(">>>>>CLIENT:"+JSON.stringify(msg));
     });
