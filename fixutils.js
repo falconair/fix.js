@@ -1,3 +1,5 @@
+"use strict";
+
 var SOHCHAR = exports.SOHCHAR = String.fromCharCode(1);
 
 exports.getCurrentUTCTimeStamp = function(){ return getUTCTimeStamp(new Date()); }
