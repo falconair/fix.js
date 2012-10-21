@@ -198,7 +198,7 @@ util.inherits(FIXClient, events.EventEmitter);
 /*==================================================*/
 /*====================FIXSession====================*/
 /*==================================================*/
-function FIXSession (fixVersion, senderCompID, targetCompID, options){
+function FIXSession (fixVersion, senderCompID, targetCompID, opt){
     var self = this;
 
     /*******Public*******/
@@ -214,7 +214,9 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     this.fixVersion = fixVersion;
     this.senderCompID = senderCompID;
     this.targetCompID = targetCompID;
-    this.options = _.defaults(options,{shouldSendHeartbeats:true,
+    this.options = opt;
+
+    _.defaults(self.options,{shouldSendHeartbeats:true,
                               shouldExpectHeartbeats:true,
                               shouldRespondToLogon:false,
                               defaultHeartbeatSeconds:30,
@@ -222,7 +224,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                               outgoingSeqNum:1,
                               isDuplicateFunc:{confirm:function(){return false}},
                               isAuthenticFunc:{confirm:function(){return true}},
-                              datastore: function () {
+                              datastore: function (id) {
+                                console.log("Using default message store for id "+id);
                                 return new function(){
                                     var dataarray = [];
                                     this.add = function(id, data){dataarray.push(data);};
@@ -240,7 +243,24 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         return serverName;
     }
     
-    this.store = options.datastore(self.getID());
+    this.store = self.options.datastore(self.getID());
+    
+    //restore state
+    self.store.each(self.getID(),function(msg){
+        var data = fixutils.convertToMap(msg);
+        if(senderCompID === data['senderCompID']){
+            //message was outgoing
+            self.options.outgoingSeqNum = msg[34] + 1;//seqnum
+            self.emit('outmsg-resync',msg);
+        }
+        else{
+            //message was incoming
+            self.options.incomingSeqNum = msg[34] + 1;//seqnum
+            self.emit('msg-resync',msg);
+        }
+    });
+    //TODO somehow pause here until file reading is done...blast you async!
+    console.log("After state restoration, in seqnum="+self.options.incomingSeqNum+" and outseqnum="+self.options.outgoingSeqNum+".");
     
     
     //non-callback methods
@@ -249,8 +269,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     this.sendMsg = function(msg){
         var fix = _.clone(msg);
         
-        options.timeOfLastOutgoing = new Date().getTime();
-        var seqn = options.outgoingSeqNum++;
+        self.options.timeOfLastOutgoing = new Date().getTime();
+        var seqn = self.options.outgoingSeqNum++;
         var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
         
         _.extend(prefil,fix);
@@ -267,7 +287,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     //[PUBLIC] Sends logoff FIX json to counter party
     this.sendLogoff = function(){
         var msg = { 35:"5" };
-        options.isLogoutRequested = true;
+        self.options.isLogoutRequested = true;
         self.sendMsg(msg);
     }
     
@@ -286,7 +306,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             }
         }
         
-        if(options.shouldSendHeartbeats === false && options.shouldExpectHeartbeats === false){
+        if(self.options.shouldSendHeartbeats === false && self.options.shouldExpectHeartbeats === false){
             clearInterval(self.heartbeatIntervalID);
         }
         
@@ -321,7 +341,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 return;
             }
             else{ //log on message
-                var heartbeatInMilliSeconds = options.defaultHeartbeatSeconds;
+                var heartbeatInMilliSeconds = self.options.defaultHeartbeatSeconds;
                 if(!_.has(fix,108)){
                     var errorMsg = '[ERROR] Heartbeat message missing from logon, will use default:' + JSON.stringify(fix);
                     util.error(errorMsg);
@@ -339,14 +359,14 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                     
     
                     //==send heartbeats
-                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && options.shouldSendHeartbeats) {
+                    if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && self.options.shouldSendHeartbeats) {
                         self.sendMsg({
                                 '35': '0'
                             }); //heartbeat
                     }
     
                     //==ask counter party to wake up
-                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& options.shouldExpectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.options.shouldExpectHeartbeats) {
                         self.emit('state', {testRequestID:self.testRequestID});
                         self.sendMsg({
                                 '35': '1',
@@ -355,7 +375,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                     }
     
                     //==counter party might be dead, kill connection
-                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && options.shouldExpectHeartbeats) {
+                    if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && self.options.shouldExpectHeartbeats) {
                         var error = '[FATAL] No heartbeat from counter party in milliseconds ' + heartbeatInMilliSeconds * 1.5;
                         util.log(error);
                         self.sendError("FATAL",error);
@@ -364,20 +384,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
                 
-                //TODO logon looks good, re-publish all messages to allow clients to re-build state
-                self.store.each(self.getID(),function(msg){
-                    var data = fixutils.convertToMap(msg);
-                    if(senderCompID === data['senderCompID']){
-                        //message was outgoing
-                        self.emit('outmsg-resync',msg);
-                    }
-                    else{
-                        //message was incoming
-                        self.emit('msg-resync',msg);
-                    }
-                });
                 
-                if(options.shouldRespondToLogon === true){
+                if(self.options.shouldRespondToLogon === true){
                     self.sendMsg({35:"A", 108:fix[108]}); //logon response
                 }
                 
@@ -391,7 +399,9 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         
         
         //store msg to datastore
-        self.store.add(self.getID(),fix);
+        var writeToDS = fixutils.convertMapToFIX(fix);
+        //console.log("Appending to ds: "+JSON.stringify(fix));
+        self.store.add(self.getID(), writeToDS);
         
         //==Confirm message contains required fields (mainly seqno, time, etc.)
         if(!_.has(fix,34) || !_.has(fix,35) || !_.has(fix,49) || !_.has(fix,56) || !_.has(fix,52) ){
@@ -409,9 +419,9 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         if (msgType === '4' && _.isUndefined(fix['123']) || fix['123'] === 'N') {
             var resetseqnostr = fix['36'];//TODO what if 36 isn't available
             var resetseqno = parseInt(resetseqno, 10);
-            if (resetseqno >= options.incomingSeqNum) {
-                options.incomingSeqNum = resetseqno;
-                self.emit('state',{incomingSeqNum:options.incomingSeqNum});
+            if (resetseqno >= self.options.incomingSeqNum) {
+                self.options.incomingSeqNum = resetseqno;
+                self.emit('state',{incomingSeqNum:self.options.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
                 util.log(error);
@@ -425,14 +435,14 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         var msgSeqNum = parseInt(msgSeqNumStr, 10);
         
         //==expected sequence number
-        if (msgSeqNum === options.incomingSeqNum) {
+        if (msgSeqNum === self.options.incomingSeqNum) {
 
-            options.incomingSeqNum++;
+            self.options.incomingSeqNum++;
             self.isResendRequested = false;
-            self.emit('state', {incomingSeqNum:options.incomingSeqNum, isResendRequested:self.isResendRequested});
+            self.emit('state', {incomingSeqNum:self.options.incomingSeqNum, isResendRequested:self.isResendRequested});
         }
         //less than expected
-        else if (msgSeqNum < options.incomingSeqNum) {
+        else if (msgSeqNum < self.options.incomingSeqNum) {
 
             //ignore posdup
             if (fix['43'] === 'Y') {
@@ -440,7 +450,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             }
             //if not posdup, error
             else {
-                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + options.incomingSeqNum+ ') : ' + JSON.stringify(fix);
+                var error = '[ERROR] Incoming sequence number ('+msgSeqNum+') lower than expected (' + self.options.incomingSeqNum+ ') : ' + JSON.stringify(fix);
                 util.log(error);
                 self.sendError("FATAL",error);
                 return;
@@ -453,7 +463,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             if (msgType === '2') {
                 //TODO remove duplication in resend processor
                 //get list of msgs from archive and send them out, but gap fill admin msgs
-                options.datastore.each(function(json){
+                self.options.datastore.each(function(json){
                     var _msgType = json[35];
                     var _seqNo = json[34];
                     if (_.include(['A', '5', '2', '0', '1', '4'], _msgType)) {
@@ -490,8 +500,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
             var newSeqNoStr = fix['36'];
             var newSeqNo = parseInt(newSeqNoStr, 10);
 
-            if (newSeqNo >= options.incomingSeqNum) {
-                options.incomingSeqNum = newSeqNo;
+            if (newSeqNo >= self.options.incomingSeqNum) {
+                self.options.incomingSeqNum = newSeqNo;
                 self.emit('state',{incomingSeqNum:self.incomingSeqNum});
             } else {
                 var error = '[FATAL] Seq-reset may not decrement sequence numbers: ' + JSON.stringify(fix);
@@ -516,7 +526,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         if (msgType === '2') {
             //TODO remove duplication in resend processor
             //get list of msgs from archive and send them out, but gap fill admin msgs
-            options.datastore.each(function(json){
+            self.options.datastore.each(function(json){
                     var _msgType = json[35];
                     var _seqNo = json[34];
                     if (_.include(['A', '5', '2', '0', '1', '4'], _msgType)) {

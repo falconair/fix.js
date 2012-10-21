@@ -1,4 +1,5 @@
 "use strict";
+var _ = require('./deps/underscore-min.js');
 
 var SOHCHAR = exports.SOHCHAR = String.fromCharCode(1);
 
@@ -89,7 +90,12 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
 
 
     headermsgarr.push('35=' + msg['35'] , SOHCHAR);
-    headermsgarr.push('52=' + getUTCTimeStamp(new Date(timeStamp)) , SOHCHAR);
+    if(_.isNumber(timeStamp)){
+        headermsgarr.push('52=' + getUTCTimeStamp(new Date(timeStamp)) , SOHCHAR);                
+    }
+    else{
+        headermsgarr.push('52=' + timeStamp , SOHCHAR);        
+    }
     headermsgarr.push('49=' + senderCompID , SOHCHAR);
     headermsgarr.push('56=' + targetCompID , SOHCHAR);
     headermsgarr.push('34=' + outgoingSeqNum , SOHCHAR);
