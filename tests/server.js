@@ -4,8 +4,14 @@ var util = require('util');
 var fix = require('../fix.js');
 
 var compid = "SERVER";
+var port = 9878;
+
 if(process.argv.length > 2){
         compid = process.argv[2];
+}
+
+if(process.argv.length > 3){
+        port = process.argv[3];
 }
 
 var server = new fix.FIXServer(compid,{});
@@ -15,10 +21,16 @@ server.on('msg',function(id, msg){
 server.on('outmsg',function(id, msg){
         util.log("<<<<<SERVER("+id+"):"+JSON.stringify(msg));        
 });
+server.on('msg-resync',function(id, msg){
+        util.log(">>>>>SERVER-RESYNC("+id+"):"+JSON.stringify(msg));        
+});
+server.on('outmsg-resync',function(id, msg){
+        util.log("<<<<<SERVER-RESYNC("+id+"):"+JSON.stringify(msg));        
+});
 server.on('state',function(id, msg){
         //util.log("-----SERVER("+id+"):"+JSON.stringify(msg));        
 });
 server.on('error',function(id, msg){
         util.log(">> >> >>SERVER("+id+"):"+JSON.stringify(msg));        
 });
-server.listen(9878);
+server.listen(port);

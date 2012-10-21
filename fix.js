@@ -352,6 +352,19 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
     
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
                 
+                //TODO logon looks good, re-publish all messages to allow clients to re-build state
+                datastore.each(function(msg){
+                    var data = fixutils.convertToMap(msg);
+                    if(senderCompID === data['senderCompID']){
+                        //message was outgoing
+                        self.emit('outmsg-resync',msg);
+                    }
+                    else{
+                        //message was incoming
+                        self.emit('msg-resync',msg);
+                    }
+                });
+                
                 if(options.shouldRespondToLogon === true){
                     self.sendMsg({35:"A", 108:fix[108]}); //logon response
                 }
