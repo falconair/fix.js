@@ -40,6 +40,7 @@ function FIXServer(compID, options){
                     
                     perserverself.fixSession.on('msg',function(msg){ self.emit('msg',serverid, msg); });
                     perserverself.fixSession.on('state',function(msg){ self.emit('state',serverid ,msg); });
+                    perserverself.fixSession.on('logon',function(){ self.emit('logon',serverid); });
                     perserverself.fixSession.on('error',function(type,msg){ self.emit('error',serverid ,type,msg); });
                     
                     perserverself.fixSession.on('outmsg',function(msg){
@@ -74,6 +75,7 @@ function FIXServer(compID, options){
                 if(!_.isUndefined(perserverself.fixSession)){
                     delete servers[perserverself.fixSession.getID()];
                     perserverself.fixSession.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+                    //TODO self.emit('disconnect',serverid);
                 }
             });
         });
@@ -168,6 +170,9 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             session.on('msg',function(msg){
                 self.emit('msg',msg);
             });
+            session.on('logon',function(){
+                self.emit('logon');
+            });
 
             self.socket.on('connect', function(){
                 self.emit('connect');
@@ -179,6 +184,7 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
             
             self.socket.on('end',function(data){
                session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
+               self.emit('disconnect');
             });
             
             //pass on this session to client
@@ -216,12 +222,16 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                               outgoingSeqNum:1,
                               isDuplicateFunc:{confirm:function(){return false}},
                               isAuthenticFunc:{confirm:function(){return true}},
-                              datastore:new function () {
+                              datastore: function () {
+                                return new function(){
                                     var dataarray = [];
-                                    this.add = function(data){dataarray.push(data);};
-                                    this.each = function(func){_.each(dataarray,func);};
-                                },
-                              });
+                                    this.add = function(id, data){dataarray.push(data);};
+                                    this.each = function(id,func){_.each(dataarray,func);};
+                                    //this.eachWithStartEnd = function(start, end, func){_.each(dataarray,func);};
+                                }
+                              },
+                        });
+    
 
     
     //[PUBLIC] get unique ID of this session
@@ -229,6 +239,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         var serverName = self.fixVersion+"-"+self.senderCompID+"-"+self.targetCompID;
         return serverName;
     }
+    
+    this.store = options.datastore(self.getID());
     
     
     //non-callback methods
@@ -353,7 +365,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
                 
                 //TODO logon looks good, re-publish all messages to allow clients to re-build state
-                datastore.each(function(msg){
+                self.store.each(self.getID(),function(msg){
                     var data = fixutils.convertToMap(msg);
                     if(senderCompID === data['senderCompID']){
                         //message was outgoing
@@ -371,6 +383,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
                 
                 //==Logon successful
                 self.isLoggedIn = true;
+                self.emit('logon');
                 self.emit('state', {isLoggedIn:self.isLoggedIn});
                 
             }
@@ -378,7 +391,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, options){
         
         
         //store msg to datastore
-        options.datastore.add(fix);
+        self.store.add(self.getID(),fix);
         
         //==Confirm message contains required fields (mainly seqno, time, etc.)
         if(!_.has(fix,34) || !_.has(fix,35) || !_.has(fix,49) || !_.has(fix,56) || !_.has(fix,52) ){
