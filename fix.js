@@ -5,6 +5,7 @@ var net = require('net');
 var events = require('events');
 var fixutils = require('./fixutils.js');
 var framedecoder = require('./FIXFrameDecoder');
+var filedatastore = require('./filedatastore.js');
 var _ = require('./deps/underscore-min.js');
 
 
@@ -30,14 +31,15 @@ function FIXServer(compID, options){
 
                 if(_.isUndefined(perserverself.fixSession )){
                     var fixVersion = msg[8];
-                    var senderCompID = msg[49];
-                    var targetCompID = msg[56];
+                    var senderCompID = msg[56];
+                    var targetCompID = msg[49];
 
-                    var extendedOptions = _.extend(options,{shouldRespondToLogon:true});
+                    var extendedOptions = _.extend(options,{shouldRespondToLogon:true, datastore:filedatastore.filedatastore});
                     perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
+
                     var serverid = perserverself.fixSession.getID();
                     servers[serverid ] = perserverself.fixSession;
-                    
+
                     perserverself.fixSession.on('msg',function(msg){ self.emit('msg',serverid, msg); });
                     perserverself.fixSession.on('state',function(msg){ self.emit('state',serverid ,msg); });
                     perserverself.fixSession.on('logon',function(){ self.emit('logon',serverid); });
@@ -49,9 +51,17 @@ function FIXServer(compID, options){
                         self.emit('outmsg',serverid ,msg);
                     });
                     
+                    
+                    perserverself.fixSession.init(function(){
+                        perserverself.fixSession.processIncomingMsg(msg);
+                    });
+                    
+                    
+                }
+                else{
+                    perserverself.fixSession.processIncomingMsg(msg);                    
                 }
                 
-                perserverself.fixSession.processIncomingMsg(msg);
             });
             
             frameDecoder.on('error',function(type, msg){
@@ -95,7 +105,11 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
     
     var self = this;
     var socket = null;
-    var session = new FIXSession(fixVersion, senderCompID, targetCompID, options);
+    
+    var extendedOptions = _.extend(options,{datastore:filedatastore.filedatastore});
+    var session = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
+    //session.init(donefunc(self));
+    //session.init(function(){donefunc(self)});
     
     /*******Public*******/
     
@@ -143,6 +157,9 @@ function FIXClient(fixVersion, senderCompID, targetCompID, options){
     //  Neverever used outside of testing
     this.modifyBehavior = function(data){ session.modifyBehavior(data); }
 
+    //[PUBLIC] initializes session
+    this.init = function(donecallback){ session.init(donecallback); }
+    
     
     this.createConnection = function(options, listener){
         self.socket = net.createConnection(options,function(){
@@ -229,7 +246,12 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                                 return new function(){
                                     var dataarray = [];
                                     this.add = function(id, data){dataarray.push(data);};
-                                    this.each = function(id,func){_.each(dataarray,func);};
+                                    this.each = function(id,func){
+                                        _.each(dataarray,function(msg){
+                                            func(msg,false);
+                                        });
+                                        func(null,true);
+                                    };
                                     //this.eachWithStartEnd = function(start, end, func){_.each(dataarray,func);};
                                 }
                               },
@@ -243,28 +265,36 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
         return serverName;
     }
     
-    this.store = self.options.datastore(self.getID());
-    
-    //restore state
-    self.store.each(self.getID(),function(msg){
-        var data = fixutils.convertToMap(msg);
-        if(senderCompID === data['senderCompID']){
-            //message was outgoing
-            self.options.outgoingSeqNum = msg[34] + 1;//seqnum
-            self.emit('outmsg-resync',msg);
-        }
-        else{
-            //message was incoming
-            self.options.incomingSeqNum = msg[34] + 1;//seqnum
-            self.emit('msg-resync',msg);
-        }
-    });
-    //TODO somehow pause here until file reading is done...blast you async!
-    console.log("After state restoration, in seqnum="+self.options.incomingSeqNum+" and outseqnum="+self.options.outgoingSeqNum+".");
-    
+    this.store = self.options.datastore(self.getID());    
     
     //non-callback methods
 
+    //[PUBLIC] Initialize (must be initialized before using...particularly if file store is being used)
+    this.init = function(donecallback){
+        //restore state
+        self.store.each(self.getID(),function(msg, isEndOfData){
+            if(isEndOfData){
+                donecallback();
+            }
+            else{
+                var data = fixutils.convertToMap(msg);
+                if(senderCompID === data['senderCompID']){
+                    //message was outgoing
+                    self.options.outgoingSeqNum = msg[34] + 1;//seqnum
+                    self.emit('outmsg-resync',msg);
+                }
+                else{
+                    //message was incoming
+                    self.options.incomingSeqNum = msg[34] + 1;//seqnum
+                    self.emit('msg-resync',msg);
+                }
+            }
+        });
+        //TODO somehow pause here until file reading is done...blast you async!
+        console.log("After state restoration, in seqnum="+self.options.incomingSeqNum+" and outseqnum="+self.options.outgoingSeqNum+".");
+
+    }
+    
     //[PUBLIC] Sends FIX json to counter party
     this.sendMsg = function(msg){
         var fix = _.clone(msg);
