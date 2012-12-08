@@ -1,0 +1,19 @@
+{
+  "name": "fix.js",
+  "description": "FIX Protocol library",
+  "version": "0.0.1",
+  "homepage": "https://github.com/falconair/fix.js",
+  "author": "Shahbaz Chaudhary <shahbazc@gmail.com>",
+  "main": "fix",
+  "directories": {
+    "handlers": "./handlers"
+  },
+  "dependencies":{
+    "underscore": "1.4.3"
+  },
+  "engines": { "node": ">=0.8"},
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/falconair/nodefix.git"
+  }
+}
