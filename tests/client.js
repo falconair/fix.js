@@ -3,7 +3,7 @@
 var util = require('util');
 var fs = require('fs');
 var fix = require('../fix.js');
-var _ = require('../deps/underscore-min.js');
+var _ = require('underscore');
 
 
 var sendercompid = "CLIENT";

@@ -4,9 +4,9 @@ var util = require('util');
 var net = require('net');
 var events = require('events');
 var fixutils = require('./fixutils.js');
-var framedecoder = require('./FIXFrameDecoder');
+var framedecoder = require('./fixFrameDecoder');
 var filedatastore = require('./filedatastore.js');
-var _ = require('./deps/underscore-min.js');
+var _ = require('underscore');
 
 
 exports.FIXServer = FIXServer;

@@ -1,5 +1,5 @@
 "use strict";
-var _ = require('./deps/underscore-min.js');
+var _ = require('underscore');
 
 var SOHCHAR = exports.SOHCHAR = String.fromCharCode(1);
 

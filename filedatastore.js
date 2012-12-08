@@ -2,7 +2,7 @@
 
 var util = require('util');
 var fs = require('fs');
-var _ = require('./deps/underscore-min.js');
+var _ = require('underscore');
 
 exports.filedatastore = datastore;
 
