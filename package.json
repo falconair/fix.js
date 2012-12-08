@@ -6,7 +6,6 @@
   "author": "Shahbaz Chaudhary <shahbazc@gmail.com>",
   "main": "fix",
   "directories": {
-    "handlers": "./handlers"
   },
   "dependencies":{
     "underscore": "1.4.3"
