@@ -13,6 +13,6 @@
   "engines": { "node": ">=0.8"},
   "repository": {
     "type": "git",
-    "url": "git://github.com/falconair/nodefix.git"
+    "url": "https://github.com/falconair/fix.js"
   }
 }
