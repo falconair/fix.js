@@ -301,7 +301,8 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
         
         self.options.timeOfLastOutgoing = new Date().getTime();
         var seqn = self.options.outgoingSeqNum++;
-        var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
+        //var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
+        var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: fixutils.getCurrentUTCTimeStamp() };
         
         _.extend(prefil,fix);
         self.emit('state', {timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
