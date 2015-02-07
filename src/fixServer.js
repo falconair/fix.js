@@ -15,84 +15,96 @@ module.exports = FIXServer;
 /*==================================================*/
 /*====================FIXServer====================*/
 /*==================================================*/
-function FIXServer(compID, options){
-        var self = this;
+function FIXServer(compID, options) {
+  var self = this;
 
-        var servers = {};
-        var server = net.createServer(function(socket){
-            //connected
-            var frameDecoder = new FixFrameDecoder();
-            var fixSession = null;
-            var perserverself = this;
+  var servers = {};
+  var server = net.createServer(function(socket) {
+    //connected
+    var frameDecoder = new FixFrameDecoder();
+    var fixSession = null;
+    var perserverself = this;
 
-            frameDecoder.on('msg',function(msgtxt){
-                var msg = fixutils.convertToMap(msgtxt);
+    frameDecoder.on('msg', function(msgtxt) {
+      var msg = fixutils.convertToMap(msgtxt);
 
-                if(_.isUndefined(perserverself.fixSession )){
-                    var fixVersion = msg[8];
-                    var senderCompID = msg[56];
-                    var targetCompID = msg[49];
+      if (_.isUndefined(perserverself.fixSession)) {
+        var fixVersion = msg[8];
+        var senderCompID = msg[56];
+        var targetCompID = msg[49];
 
-                    var extendedOptions = _.extend(options,{shouldRespondToLogon:true, datastore:filedatastore.filedatastore});
-                    perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
+        var extendedOptions = _.extend(options, {
+          shouldRespondToLogon: true,
+          datastore: filedatastore.filedatastore
+        });
+        perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
 
-                    var serverid = perserverself.fixSession.getID();
-                    servers[serverid ] = perserverself.fixSession;
+        var serverid = perserverself.fixSession.getID();
+        servers[serverid] = perserverself.fixSession;
 
-                    perserverself.fixSession.on('msg',function(msg){ self.emit('msg',serverid, msg); });
-                    perserverself.fixSession.on('state',function(msg){ self.emit('state',serverid ,msg); });
-                    perserverself.fixSession.on('logon',function(){ self.emit('logon',serverid); });
-                    perserverself.fixSession.on('error',function(type,msg){ self.emit('error',serverid ,type,msg); });
+        perserverself.fixSession.on('msg', function(msg) {
+          self.emit('msg', serverid, msg);
+        });
+        perserverself.fixSession.on('state', function(msg) {
+          self.emit('state', serverid, msg);
+        });
+        perserverself.fixSession.on('logon', function() {
+          self.emit('logon', serverid);
+        });
+        perserverself.fixSession.on('error', function(type, msg) {
+          self.emit('error', serverid, type, msg);
+        });
 
-                    perserverself.fixSession.on('outmsg',function(msg){
-                        var outstr = fixutils.convertMapToFIX(msg);
-                        socket.write(outstr);
-                        self.emit('outmsg',serverid ,msg);
-                    });
-
-
-                    perserverself.fixSession.init(function(){
-                        perserverself.fixSession.processIncomingMsg(msg);
-                    });
-
-
-                }
-                else{
-                    perserverself.fixSession.processIncomingMsg(msg);
-                }
-
-            });
-
-            frameDecoder.on('error',function(type, msg){
-                if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
-                    self.emit('error','UNKNOWN',type,msg);
-                }
-                else{
-                    self.emit('error',serverid,type,msg);
-                }
-                if(type === 'FATAL'){
-                    socket.end();
-                }
-            });
-
-            socket.on('data',function(data){
-
-                frameDecoder.processData(data);
-            });
-
-            socket.on('end', function(){
-                if(!_.isUndefined(perserverself.fixSession)){
-                    delete servers[perserverself.fixSession.getID()];
-                    perserverself.fixSession.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
-                    //TODO self.emit('disconnect',serverid);
-                }
-            });
+        perserverself.fixSession.on('outmsg', function(msg) {
+          var outstr = fixutils.convertMapToFIX(msg);
+          socket.write(outstr);
+          self.emit('outmsg', serverid, msg);
         });
 
 
-        this.listen = function(){
-            server.listen.apply(server,arguments);
-            //server.listen(arguments);
-        };
+        perserverself.fixSession.init(function() {
+          perserverself.fixSession.processIncomingMsg(msg);
+        });
+
+
+      } else {
+        perserverself.fixSession.processIncomingMsg(msg);
+      }
+
+    });
+
+    frameDecoder.on('error', function(type, msg) {
+      if (perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)) {
+        self.emit('error', 'UNKNOWN', type, msg);
+      } else {
+        self.emit('error', serverid, type, msg);
+      }
+      if (type === 'FATAL') {
+        socket.end();
+      }
+    });
+
+    socket.on('data', function(data) {
+
+      frameDecoder.processData(data);
+    });
+
+    socket.on('end', function() {
+      if (!_.isUndefined(perserverself.fixSession)) {
+        delete servers[perserverself.fixSession.getID()];
+        perserverself.fixSession.modifyBehavior({
+          shouldSendHeartbeats: false,
+          shouldExpectHeartbeats: false
+        });
+        //TODO self.emit('disconnect',serverid);
+      }
+    });
+  });
+
+
+  this.listen = function() {
+    server.listen.apply(server, arguments);
+    //server.listen(arguments);
+  };
 }
 util.inherits(FIXServer, events.EventEmitter);
