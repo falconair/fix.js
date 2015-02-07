@@ -53,6 +53,17 @@ function FIXSession(fixVersion, senderCompID, targetCompID, opt) {
   });
 
 
+  //transient variable (nothing to do with state)
+  this.heartbeatIntervalID = "";
+
+  //runtime variables
+  this.isLoggedIn = false;
+  this.timeOfLastIncoming = new Date().getTime();
+  this.timeOfLastOutgoing = new Date().getTime();
+  this.testRequestID = 1;
+  this.isResendRequested = false;
+  this.isLogoutRequested = false;
+
 
   //[PUBLIC] get unique ID of this session
   this.getID = function() {
@@ -149,7 +160,6 @@ function FIXSession(fixVersion, senderCompID, targetCompID, opt) {
 
     self.emit('state', data);
   }
-
 
   //[PUBLIC] process incoming messages
   this.processIncomingMsg = function(fix) {
@@ -417,20 +427,6 @@ function FIXSession(fixVersion, senderCompID, targetCompID, opt) {
     //pass message on to listener
     self.emit('msg', fix);
   }
-
-
-
-  //transient variable (nothing to do with state)
-  this.heartbeatIntervalID = "";
-
-  //runtime variables
-  this.isLoggedIn = false;
-  this.timeOfLastIncoming = new Date().getTime();
-  this.timeOfLastOutgoing = new Date().getTime();
-  this.testRequestID = 1;
-  this.isResendRequested = false;
-  this.isLogoutRequested = false;
-
 
   //internal methods (non-public)
   this.sendError = function(type, msg) {
