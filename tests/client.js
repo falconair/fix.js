@@ -2,7 +2,7 @@
 
 var util = require('util');
 var fs = require('fs');
-var fix = require('../fix.js');
+var FIXClient = require('../src/fixClient.js');
 var _ = require('underscore');
 
 
@@ -20,7 +20,7 @@ if(process.argv.length > 4){
 
 console.log("FIX client listening on port "+port+" with server "+ targetcompid+" and client id "+sendercompid);
 
-var client = new fix.FIXClient("FIX.4.2",sendercompid,targetcompid,{});
+var client = new FIXClient("FIX.4.2",sendercompid,targetcompid,{});
 client.init(function(clientx){
 
     console.log("client initiated:"+_.keys(client));
@@ -50,11 +50,10 @@ client.init(function(clientx){
         session.on('disconnect',function(msg){
             util.log("-------CLIENT:"+JSON.stringify(msg));
         });
-        
+
         session.sendLogon();
     });
-    
+
 });
 
 console.log("client exiting");
-

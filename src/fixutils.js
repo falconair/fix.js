@@ -72,7 +72,7 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
     for (var tag in msgraw) {
         if (msgraw.hasOwnProperty(tag)) msg[tag] = msgraw[tag];
     }
-    
+
     delete msg['9']; //bodylength
     delete msg['10']; //checksum
 
@@ -91,10 +91,10 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
 
     headermsgarr.push('35=' + msg['35'] , SOHCHAR);
     if(_.isNumber(timeStamp)){
-        headermsgarr.push('52=' + getUTCTimeStamp(new Date(timeStamp)) , SOHCHAR);                
+        headermsgarr.push('52=' + getUTCTimeStamp(new Date(timeStamp)) , SOHCHAR);
     }
     else{
-        headermsgarr.push('52=' + timeStamp , SOHCHAR);        
+        headermsgarr.push('52=' + timeStamp , SOHCHAR);
     }
     headermsgarr.push('49=' + senderCompID , SOHCHAR);
     headermsgarr.push('56=' + targetCompID , SOHCHAR);
@@ -129,7 +129,7 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
     var outmsg = outmsgarr.join('');
 
     outmsg += '10=' + checksum(outmsg) + SOHCHAR;
-        
+
     return outmsg;
 
 }
@@ -143,4 +143,19 @@ var convertToMap = exports.convertToMap = function(msg) {
     }
     return fix;
 
+}
+
+var memoryStore = exports.memoryStore = function (id) {
+  console.log("Using default message store for id "+id);
+  return new function(){
+      var dataarray = [];
+      this.add = function(id, data){dataarray.push(data);};
+      this.each = function(id,func){
+          _.each(dataarray,function(msg){
+              func(msg,false);
+          });
+          func(null,true);
+      };
+      //this.eachWithStartEnd = function(start, end, func){_.each(dataarray,func);};
+  }
 }

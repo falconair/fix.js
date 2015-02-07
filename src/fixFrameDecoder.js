@@ -12,16 +12,16 @@ var ENDOFTAG8 = 10;
 var STARTOFTAG9VAL = ENDOFTAG8 + 2;
 var SIZEOFTAG10 = 8;
 
-exports.FixFrameDecoder = FixFrameDecoder;
+module.exports = FixFrameDecoder;
 
 
 function FixFrameDecoder(){
-    
+
     this.buffer = '';
     var self = this;
-    
+
     this.processData = function(data){
-        
+
         self.buffer = self.buffer + data;
         while (self.buffer.length > 0) {
             //====================================Step 1: Extract complete FIX message====================================
@@ -85,7 +85,7 @@ function FixFrameDecoder(){
                 var remainingBuffer = self.buffer.substring(msgLength);
                 self.buffer = remainingBuffer;
             }
-            
+
             //====================================Step 2: Validate message====================================
 
             var calculatedChecksum = fixutil.checksum(msg.substr(0, msg.length - 7));

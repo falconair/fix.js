@@ -9,208 +9,7 @@ var filedatastore = require('./filedatastore.js');
 var _ = require('underscore');
 
 
-exports.FIXServer = FIXServer;
-exports.FIXClient = FIXClient;
-exports.FIXSession = FIXSession;
-
-/*==================================================*/
-/*====================FIXServer====================*/
-/*==================================================*/
-function FIXServer(compID, options){
-        var self = this;
-
-        var servers = {};
-        var server = net.createServer(function(socket){
-            //connected
-            var frameDecoder = new framedecoder.FixFrameDecoder();
-            var fixSession = null;
-            var perserverself = this;
-            
-            frameDecoder.on('msg',function(msgtxt){
-                var msg = fixutils.convertToMap(msgtxt);
-
-                if(_.isUndefined(perserverself.fixSession )){
-                    var fixVersion = msg[8];
-                    var senderCompID = msg[56];
-                    var targetCompID = msg[49];
-
-                    var extendedOptions = _.extend(options,{shouldRespondToLogon:true, datastore:filedatastore.filedatastore});
-                    perserverself.fixSession = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
-
-                    var serverid = perserverself.fixSession.getID();
-                    servers[serverid ] = perserverself.fixSession;
-
-                    perserverself.fixSession.on('msg',function(msg){ self.emit('msg',serverid, msg); });
-                    perserverself.fixSession.on('state',function(msg){ self.emit('state',serverid ,msg); });
-                    perserverself.fixSession.on('logon',function(){ self.emit('logon',serverid); });
-                    perserverself.fixSession.on('error',function(type,msg){ self.emit('error',serverid ,type,msg); });
-                    
-                    perserverself.fixSession.on('outmsg',function(msg){
-                        var outstr = fixutils.convertMapToFIX(msg);
-                        socket.write(outstr);
-                        self.emit('outmsg',serverid ,msg);
-                    });
-                    
-                    
-                    perserverself.fixSession.init(function(){
-                        perserverself.fixSession.processIncomingMsg(msg);
-                    });
-                    
-                    
-                }
-                else{
-                    perserverself.fixSession.processIncomingMsg(msg);                    
-                }
-                
-            });
-            
-            frameDecoder.on('error',function(type, msg){
-                if(perserverself.fixSession === null || _.isUndefined(perserverself.fixSession)){
-                    self.emit('error','UNKNOWN',type,msg);
-                }
-                else{
-                    self.emit('error',serverid,type,msg);
-                }
-                if(type === 'FATAL'){
-                    socket.end();
-                }
-            });
-            
-            socket.on('data',function(data){
-                
-                frameDecoder.processData(data);
-            });
-            
-            socket.on('end', function(){
-                if(!_.isUndefined(perserverself.fixSession)){
-                    delete servers[perserverself.fixSession.getID()];
-                    perserverself.fixSession.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
-                    //TODO self.emit('disconnect',serverid);
-                }
-            });
-        });
-        
-        
-        this.listen = function(){
-            server.listen.apply(server,arguments);
-            //server.listen(arguments);
-        };
-}
-util.inherits(FIXServer, events.EventEmitter);
-
-/*==================================================*/
-/*====================FIXClient====================*/
-/*==================================================*/
-function FIXClient(fixVersion, senderCompID, targetCompID, options){
-    
-    var self = this;
-    var socket = null;
-    
-    var extendedOptions = _.extend(options,{datastore:filedatastore.filedatastore});
-    var session = new FIXSession(fixVersion, senderCompID, targetCompID, extendedOptions);
-    //session.init(donefunc(self));
-    //session.init(function(){donefunc(self)});
-    
-    /*******Public*******/
-    
-    //[PUBLIC] get unique ID of this session
-    this.getID = function(){
-        var serverName = fixVersion+"-"+senderCompID+"-"+targetCompID;
-        return serverName;
-    }
-    
-    //TODO on('syncmsg',...) crash recovery
-    //TODO on('syncoutmsg',...) crash recovery
-    
-    //callback subscription methods
-    //[PUBLIC] listen to incoming messages (user apps subscribe here)
-    //arguments: json object
-    //this.onMsg = function(callback){ session.onMsg(callback); }
-    
-    //[PUBLIC] listen to outgoing messages (only used by admin apps)
-    //arguments: json object
-    //this.onOutMsg = function(callback){ session.onOutMsg(callback); }
-    
-    //[PUBLIC] listen to error messages
-    //arguments: type -- (FATAL, ERROR, etc.) -- fatal means session is gone
-    //arguments: description -- text description
-    //this.onError = function(callback){ session.onError(callback); }
-    
-    //[PUBLIC] listen to state changes (only used by admin apps)
-    //arguments: json object -- example: {loggedIn:true}
-    //this.onStateChange = function(callback){ session.onStateChange(callback); }
-
-    //[PUBLIC] listen to end of session alerts (only used by system apps)
-    //  for example, tcp connector uses this to find out when to disconnect
-    //this.onEndSession = function(callback){ session.onEndSession(callback); }
-    
-    //[PUBLIC] Sends FIX json to counter party
-    this.sendMsg = function(msg){ session.sendMsg(msg); }
-    
-    //[PUBLIC] Sends logon FIX json to counter party
-    this.sendLogon = function(){ session.sendLogon(); }
-    
-    //[PUBLIC] Sends logoff FIX json to counter party
-    this.sendLogoff = function(){ session.sendLogoff(); }
-    
-    //[PUBLIC] Modify's one or more 'behabior' control variables.
-    //  Neverever used outside of testing
-    this.modifyBehavior = function(data){ session.modifyBehavior(data); }
-
-    //[PUBLIC] initializes session
-    this.init = function(donecallback){ session.init(donecallback); }
-    
-    
-    this.createConnection = function(options, listener){
-        self.socket = net.createConnection(options,function(){
-            
-            //client connected, create fix session
-            var fixFrameDecoder = new framedecoder.FixFrameDecoder();
-            fixFrameDecoder.on('msg',function(datatxt){
-                var data = fixutils.convertToMap(datatxt);
-                session.processIncomingMsg(data);
-            });
-            fixFrameDecoder.on('error',function(type, error){
-                //TODO handle
-            });
-
-            //TODO users of clients need to subscribe to outgoing/incoming msgs, error, etc.
-            session.on('outmsg',function(msg){
-                var outstr = fixutils.convertMapToFIX(msg);
-                self.socket.write(outstr);
-                self.emit('outmsg',msg);
-            });
-            session.on('endsession',function(){
-                self.socket.end();
-                self.emit('endsession');
-            });
-            session.on('msg',function(msg){
-                self.emit('msg',msg);
-            });
-            session.on('logon',function(){
-                self.emit('logon');
-            });
-
-            self.socket.on('connect', function(){
-                self.emit('connect');
-            });
-            
-            self.socket.on('data',function(data){
-                fixFrameDecoder.processData(data);
-            });
-            
-            self.socket.on('end',function(data){
-               session.modifyBehavior({shouldSendHeartbeats:false, shouldExpectHeartbeats:false});
-               self.emit('disconnect');
-            });
-            
-            //pass on this session to client
-            listener(self);
-            
-        });
-    }
-}
-util.inherits(FIXClient, events.EventEmitter);
+module.exports = FIXSession;
 
 /*==================================================*/
 /*====================FIXSession====================*/
@@ -219,14 +18,14 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
     var self = this;
 
     /*******Public*******/
-    
+
     //=======EVENTS=========//
     //msg   :- ...on('msg', jsonobject) [listen to incoming messages (user apps subscribe here)]
     //state :- ...on('state',jsonobject) [listen to state changes (only used by admin apps)]
     //outmsg:- ...on('outmsg',jsonobject) [listen to outgoing messages (only used by admin apps)]
     //error :- ...on('error',type,jsonobject) [listen to error messages, type=FATAL means connection is gone]
     //endsession :- ...on('endsession') [listen to end of session alerts (only used by system apps)]
-    
+
     //required when session needs to be identified by wrappers
     this.fixVersion = fixVersion;
     this.senderCompID = senderCompID;
@@ -241,32 +40,19 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                               outgoingSeqNum:1,
                               isDuplicateFunc:{confirm:function(){return false}},
                               isAuthenticFunc:{confirm:function(){return true}},
-                              datastore: function (id) {
-                                console.log("Using default message store for id "+id);
-                                return new function(){
-                                    var dataarray = [];
-                                    this.add = function(id, data){dataarray.push(data);};
-                                    this.each = function(id,func){
-                                        _.each(dataarray,function(msg){
-                                            func(msg,false);
-                                        });
-                                        func(null,true);
-                                    };
-                                    //this.eachWithStartEnd = function(start, end, func){_.each(dataarray,func);};
-                                }
-                              },
+                              datastore: fixutils.memoryStore,
                         });
-    
 
-    
+
+
     //[PUBLIC] get unique ID of this session
     this.getID = function(){
         var serverName = self.fixVersion+"-"+self.senderCompID+"-"+self.targetCompID;
         return serverName;
     }
-    
-    this.store = self.options.datastore(self.getID());    
-    
+
+    this.store = self.options.datastore(self.getID());
+
     //non-callback methods
 
     //[PUBLIC] Initialize (must be initialized before using...particularly if file store is being used)
@@ -294,21 +80,21 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
         console.log("After state restoration, in seqnum="+self.options.incomingSeqNum+" and outseqnum="+self.options.outgoingSeqNum+".");
 
     }
-    
+
     //[PUBLIC] Sends FIX json to counter party
     this.sendMsg = function(msg){
         var fix = _.clone(msg);
-        
+
         self.options.timeOfLastOutgoing = new Date().getTime();
         var seqn = self.options.outgoingSeqNum++;
         //var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: new Date().getTime() };
         var prefil = {8:fixVersion, 49:senderCompID, 56:targetCompID, 34:seqn, 52: fixutils.getCurrentUTCTimeStamp() };
-        
+
         _.extend(prefil,fix);
         self.emit('state', {timeOfLastOutgoing:self.timeOfLastOutgoing, outgoingSeqNum:self.outgoingSeqNum});
         self.emit('outmsg',prefil);
     }
-    
+
     //[PUBLIC] Sends logon FIX json to counter party
     this.sendLogon = function(){
         var msg = { 35:"A", 108:20, 98:0 };
@@ -321,7 +107,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
         self.options.isLogoutRequested = true;
         self.sendMsg(msg);
     }
-    
+
     //[PUBLIC] Modify's one or more 'behabior' control variables.
     //  Neverever used outside of testing
     this.modifyBehavior = function(data){
@@ -336,21 +122,21 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                 this.shouldRespondToLogon = data[idx];
             }
         }
-        
+
         if(self.options.shouldSendHeartbeats === false && self.options.shouldExpectHeartbeats === false){
             clearInterval(self.heartbeatIntervalID);
         }
-        
+
         self.emit('state', data);
     }
 
-    
+
     //[PUBLIC] process incoming messages
     this.processIncomingMsg = function(fix){
 
         self.timeOfLastIncoming = new Date().getTime();
         self.emit('state', {timeOfLastIncoming:self.timeOfLastIncoming});
-        
+
 
         //If not logged in
         if (self.isLoggedIn === false){
@@ -361,9 +147,9 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                 self.sendError("FATAL",errorMsg);
                 return;
             }
-            
+
             var msgType = fix['35'];
-            
+
             //==Confirm first msg is logon==
             if (msgType !== 'A') {
                 var errorMsg = '[FATAL] First message must be logon:' + JSON.stringify(fix);
@@ -381,21 +167,21 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                 }
                 else{
                     var _heartbeatInMilliSeconds = fix[108] ;
-                    heartbeatInMilliSeconds = parseInt(_heartbeatInMilliSeconds, 10) * 1000;                    
+                    heartbeatInMilliSeconds = parseInt(_heartbeatInMilliSeconds, 10) * 1000;
                 }
-                
+
                 //==Set heartbeat mechanism
                 self.heartbeatIntervalID = setInterval(function () {
                     var currentTime = new Date().getTime();
-                    
-    
+
+
                     //==send heartbeats
                     if (currentTime - self.timeOfLastOutgoing > heartbeatInMilliSeconds && self.options.shouldSendHeartbeats) {
                         self.sendMsg({
                                 '35': '0'
                             }); //heartbeat
                     }
-    
+
                     //==ask counter party to wake up
                     if (currentTime - self.timeOfLastIncoming > (heartbeatInMilliSeconds * 1.5)&& self.options.shouldExpectHeartbeats) {
                         self.emit('state', {testRequestID:self.testRequestID});
@@ -404,7 +190,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                                 '112': self.testRequestID++
                             }); //test req id
                     }
-    
+
                     //==counter party might be dead, kill connection
                     if (currentTime - self.timeOfLastIncoming > heartbeatInMilliSeconds * 2 && self.options.shouldExpectHeartbeats) {
                         var error = '[FATAL] No heartbeat from counter party in milliseconds ' + heartbeatInMilliSeconds * 1.5;
@@ -412,28 +198,28 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                         self.sendError("FATAL",error);
                         return;
                     }
-    
+
                 }, heartbeatInMilliSeconds / 2); //End Set heartbeat mechanism==
-                
-                
+
+
                 if(self.options.shouldRespondToLogon === true){
                     self.sendMsg({35:"A", 108:fix[108]}); //logon response
                 }
-                
+
                 //==Logon successful
                 self.isLoggedIn = true;
                 self.emit('logon');
                 self.emit('state', {isLoggedIn:self.isLoggedIn});
-                
+
             }
         }
-        
-        
+
+
         //store msg to datastore
         var writeToDS = fixutils.convertMapToFIX(fix);
         //console.log("Appending to ds: "+JSON.stringify(fix));
         self.store.add(self.getID(), writeToDS);
-        
+
         //==Confirm message contains required fields (mainly seqno, time, etc.)
         if(!_.has(fix,34) || !_.has(fix,35) || !_.has(fix,49) || !_.has(fix,56) || !_.has(fix,52) ){
             var errorMsg = '[WARN] Message does not contain one of required tags:34,35,49,56,52';
@@ -442,10 +228,10 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
             self.sendError("WARN",errorMsg);
             return;
         }
-        
-        
+
+
         var msgType = fix['35'];
-        
+
         //==Process seq-reset (no gap-fill)
         if (msgType === '4' && _.isUndefined(fix['123']) || fix['123'] === 'N') {
             var resetseqnostr = fix['36'];//TODO what if 36 isn't available
@@ -460,11 +246,11 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                 return;
             }
         }
-        
+
         //==Check sequence numbers
         var msgSeqNumStr = fix['34'];
         var msgSeqNum = parseInt(msgSeqNumStr, 10);
-        
+
         //==expected sequence number
         if (msgSeqNum === self.options.incomingSeqNum) {
 
@@ -525,7 +311,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                     });
             }
         }
-        
+
         //==Process sequence-reset with gap-fill
         if (msgType === '4' && fix['123'] === 'Y') {
             var newSeqNoStr = fix['36'];
@@ -552,7 +338,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                     '112': testReqID
                 });
         }
-        
+
         //==Process resend-request
         if (msgType === '2') {
             //TODO remove duplication in resend processor
@@ -587,26 +373,26 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
                 self.sendMsg(fix);
             }
         }
-        
-        
+
+
         //pass message on to listener
         self.emit('msg',fix);
     }
-    
-    
+
+
 
     //transient variable (nothing to do with state)
     this.heartbeatIntervalID = "";
 
-    //runtime variables 
+    //runtime variables
     this.isLoggedIn = false;
     this.timeOfLastIncoming = new Date().getTime();
     this.timeOfLastOutgoing = new Date().getTime();
     this.testRequestID = 1;
     this.isResendRequested = false;
     this.isLogoutRequested = false;
-    
-    
+
+
     //internal methods (non-public)
     this.sendError = function(type, msg){
         self.emit('error',type,msg);
@@ -614,7 +400,7 @@ function FIXSession (fixVersion, senderCompID, targetCompID, opt){
             self.endSession();
         }
     }
-    
+
     //endSession calls methods provided by code which wraps FixSession. It exists so the
     //network code can supply a way to drop connection, without introducing network
     //code to this class
