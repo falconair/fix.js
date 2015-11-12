@@ -32,29 +32,29 @@ client.init(function(clientx) {
     port: port,
     host: host
   }, function(session) {
-    session.on('logon', function() {
-      util.log(">>>>>CLIENT-LOGON");
+    session.on('logon', function () {
+      console.log(">>>>> CLIENT-LOGON");
     });
-    session.on('msg', function(msg) {
-      util.log(">>>>>CLIENT:" + JSON.stringify(msg));
+    session.on('msg', function (msg) {
+      console.log(">>>>> CLIENT: %j", msg);
     });
-    session.on('outmsg', function(msg) {
-      util.log("<<<<<CLIENT:" + JSON.stringify(msg));
+    session.on('outmsg', function (msg) {
+      console.log("<<<<< OUT MSG: %j", msg);
     });
-    session.on('msg-resync', function(msg) {
-      util.log(">>>>>CLIENT-RESYNC:" + JSON.stringify(msg));
+    session.on('msg-resync', function (msg) {
+      console.log(">>>>> CLIENT-RESYNC: %j", msg);
     });
-    session.on('outmsg-resync', function(msg) {
-      util.log("<<<<<CLIENT-RESYNC:" + JSON.stringify(msg));
+    session.on('outmsg-resync', function (msg) {
+      console.log("<<<<< CLIENT-RESYNC: %j", msg);
     });
-    session.on('error', function(msg) {
-      util.log(">> >> >>CLIENT:" + JSON.stringify(msg));
+    session.on('error', function (msg) {
+      console.log(">> >> >> ERROR: %j", msg);
     });
-    session.on('state', function(msg) {
-      //util.log("-----CLIENT:"+JSON.stringify(msg));
+    session.on('state', function (msg) {
+      // util.log("-----CLIENT:"+JSON.stringify(msg));
     });
-    session.on('disconnect', function(msg) {
-      util.log("-------CLIENT:" + JSON.stringify(msg));
+    session.on('disconnect', function (msg) {
+      console.log("----- DISCONNECT: %j", msg);
     });
 
     session.sendLogon();
