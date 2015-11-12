@@ -12,20 +12,25 @@ var port = 9878;
 var host = "localhost";
 var fixVersion = "FIX.4.2";
 
-if (process.argv.length === 7) {
+if (process.argv.length >= 7) {
   host = process.argv[2];
   port = parseInt(process.argv[3]);
   fixVersion = process.argv[4];
   sendercompid = process.argv[5];
   targetcompid = process.argv[6];
 } else {
-  console.log("Usage: %s host port FIXVersion sendercompid targetcompid", process.argv[1]);
+  console.log("Usage: %s host port FIXVersion sendercompid targetcompid [incomingSeqNum] [outgoingSeqNum]",
+    process.argv[1]);
   process.exit();
 }
 
 console.log("FIX client connecting to %s:%s (%s %s)", host, port, sendercompid, targetcompid);
 
-var client = new FIXClient(fixVersion, sendercompid, targetcompid, {});
+var client = new FIXClient(fixVersion, sendercompid, targetcompid, {
+  incomingSeqNum: process.argv[7],
+  outgoingSeqNum: process.argv[8]
+});
+
 client.init(function(clientx) {
   console.log("client initiated:" + _.keys(client));
   client.createConnection({
