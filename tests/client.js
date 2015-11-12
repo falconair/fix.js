@@ -6,27 +6,31 @@ var FIXClient = require('../src/fixClient.js');
 var _ = require('underscore');
 
 
-var sendercompid = "CLIENT";
-var targetcompid = "SERVER";
+var sendercompid;
+var targetcompid;
 var port = 9878;
+var host = "localhost";
+var fixVersion = "FIX.4.2";
 
-if (process.argv.length > 3) {
-  sendercompid = process.argv[2];
-  targetcompid = process.argv[3];
+if (process.argv.length === 7) {
+  host = process.argv[2];
+  port = parseInt(process.argv[3]);
+  fixVersion = process.argv[4];
+  sendercompid = process.argv[5];
+  targetcompid = process.argv[6];
+} else {
+  console.log("Usage: %s host port FIXVersion sendercompid targetcompid", process.argv[1]);
+  process.exit();
 }
-if (process.argv.length > 4) {
-  port = parseInt(process.argv[4]);
-}
 
-console.log("FIX client listening on port " + port + " with server " + targetcompid + " and client id " + sendercompid);
+console.log("FIX client connecting to %s:%s (%s %s)", host, port, sendercompid, targetcompid);
 
-var client = new FIXClient("FIX.4.2", sendercompid, targetcompid, {});
+var client = new FIXClient(fixVersion, sendercompid, targetcompid, {});
 client.init(function(clientx) {
-
   console.log("client initiated:" + _.keys(client));
-
   client.createConnection({
-    port: port
+    port: port,
+    host: host
   }, function(session) {
     session.on('logon', function() {
       util.log(">>>>>CLIENT-LOGON");
