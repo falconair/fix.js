@@ -140,6 +140,10 @@ var convertToMap = exports.convertToMap = function(msg) {
     var kvpair = keyvals[kv].split('=');
     fix[kvpair[0]] = kvpair[1];
   }
+
+  //TODO: Somehow an empty string is ending up in maps, look for it properly
+  delete fix[''];
+  
   return fix;
 
 }

@@ -6,7 +6,7 @@ var FIXSession = require("../src/fixSession.js");
 var fixutil = require("../src/fixutils.js");
 
 if (process.argv.length < 3) {
-  util.log("Usage: node autotester.js <testcase> [<isVerbose>]");
+  console.log("Usage: node autotester.js <testcase> [<isVerbose>]");
   process.exit(-1);
 }
 
@@ -67,13 +67,15 @@ fs.readFile(testcase, function(err, data) {
   processTestScript(lines);
 
 
-  //if(isErrorFree) util.log(testcase+": PASS");
-  //else util.log(testcase+": PASS");
+  //if(isErrorFree) console.log(testcase+": PASS");
+  //else console.log(testcase+": PASS");
 });
 
 function processTestScript(lines){
   var sess = null;
   for (var idx = 0; idx < lines.length; idx++) {
+    if(isVerbose) console.log("\n\n");
+    
     var line = lines[idx];
 
     if (line.command === "i" && line.detail === "CONNECT") {
@@ -85,13 +87,13 @@ function processTestScript(lines){
 
       sess = new FIXSession(version, sender, target, {});
       sess.on('state', function(state) {
-        if(isVerbose) util.log("State change: " + JSON.stringify(state));
+        if(isVerbose) console.log("State change: " + JSON.stringify(state));
       });
       sess.on('outmsg', function(act) {
         var exp = responses.pop();
 
-        if(isVerbose) util.log("Expected:"+JSON.stringify(exp));
-        if(isVerbose) util.log("Actual:"+JSON.stringify(act));
+        if(isVerbose) console.log("Expected:"+JSON.stringify(exp));
+        if(isVerbose) console.log("Actual  :"+JSON.stringify(act));
 
 
         var isError = false;
@@ -102,9 +104,9 @@ function processTestScript(lines){
             continue;
           }
           if (act[actidx] !== exp[actidx]) {
-            //if(isVerbose) util.log("Tag "+idx+"'s expected val ["+exp[idx]+"] does not match actual ["+act[idx]+"]");
+            //if(isVerbose) console.log("Tag "+idx+"'s expected val ["+exp[idx]+"] does not match actual ["+act[idx]+"]");
             var err = "[ERROR] Tag " + actidx + "'s expected val [" + exp[actidx] + "] does not match actual [" + act[actidx] + "]";
-            if(isVerbose) util.log(err);
+            if(isVerbose) console.log(err);
             isError = true;
             isErrorFree = false;
             errors.push(err);
@@ -112,11 +114,11 @@ function processTestScript(lines){
         }
 
         if (isError) {
-          if(isVerbose) util.error("Expected:" + JSON.stringify(exp));
-          if(isVerbose) util.error("Actual:" + JSON.stringify(act));
+          if(isVerbose) console.error("Expected:" + JSON.stringify(exp));
+          if(isVerbose) console.error("Actual  :" + JSON.stringify(act));
 
           for (actidx in errors) {
-            util.error(errors[idx]);
+            console.error(errors[idx]);
           }
         }
       });
@@ -129,12 +131,12 @@ function processTestScript(lines){
     }
 
     if (line.command === "I") {
-      if(isVerbose) util.log("Sending:" + JSON.stringify(line.fix));
+      if(isVerbose) console.log("Sending:" + JSON.stringify(line.fix));
       sess.processIncomingMsg(line.fix);
     }
 
     if (line.command === "E") {
-      if(isVerbose) util.log("Receiving:" + JSON.stringify(line.fix));
+      if(isVerbose) console.log("Receiving:" + JSON.stringify(line.fix));
       //continue;
     }
   }

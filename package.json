@@ -7,13 +7,16 @@
   "main": "src/fix.js",
   "directories": {},
   "dependencies": {
-    "underscore": "1.4.3"
+    "underscore": "^1.13.6"
   },
   "engines": {
-    "node": ">=0.8"
+    "node": ">=20.13.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/falconair/fix.js"
+  },
+  "scripts": {
+    "test": "node --test --experimental-test-coverage tests/"
   }
 }
