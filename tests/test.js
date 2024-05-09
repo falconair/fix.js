@@ -11,23 +11,32 @@ const FIXSession = require('../src/fixSession.js');
 describe('FIXSession', () => {
 
   it('should parse FIX correctly', () => {
-    fixMap = fixutils.convertToMap("8=FIX.4.19=6135=A34=149=EXEC52=20121105-23:24:0656=BANZAI98=0108=3010=0038=FIX.4.19=6135=A34=149=BANZAI52=20121105-23:24:0656=EXEC98=0108=3010=003");
-    console.log(fixMap);
-    console.log(fixutils.convertMapToFIX(fixMap));
+    fixMap = fixutils.convertToMap("8=FIX.4.19=6135=A34=149=EXEC52=20121105-23:24:0656=BANZAI98=0108=3010=003");
 
     assert.equal(fixMap[8]  , 'FIX.4.1');
     assert.equal(fixMap[9]  , 61);
     assert.equal(fixMap[10] , '003');
     assert.equal(fixMap[34] , '1');
     assert.equal(fixMap[35] , 'A');
-    assert.equal(fixMap[49] , 'BANZAI');
+    assert.equal(fixMap[49] , 'EXEC');
     //assert.equal(fixMap[52] , 'DATE');
-    assert.equal(fixMap[56] , 'EXEC');
+    assert.equal(fixMap[56] , 'BANZAI');
     assert.equal(fixMap[98] , '0');
     assert.equal(fixMap[108], '30');
     assert.ok(!('' in fixMap));
 
   });
+  
+  // it('should build FIX correctly', () => {
+
+  //   fixIN = "8=FIX.4.19=6135=A34=149=EXEC52=20121105-23:24:0656=BANZAI98=0108=3010=003";
+  //   fixMap = fixutils.convertToMap(fixIN);
+
+  //   fixOUT = fixutils.convertMapToFIX(fixMap);
+
+  //   assert.equal(fixIN, fixOUT);
+
+  // });
 
   it('should send a logon message', () => {
     const f = new FIXSession("FIX.4.2", "SNDRCMPID", "TRGTCMPID", {});

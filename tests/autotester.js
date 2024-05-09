@@ -33,7 +33,7 @@ fs.readFile(testcase, function(err, data) {
       continue;
     }
 
-    var fixstr = line.substr(1, line.length);
+    var fixstr = line.substring(1);
 
     if(command == 'I' || command == 'E'){
       fixstr=fixstr.replace('<TIME>',fixutil.getUTCTimeStamp());
@@ -75,7 +75,7 @@ function processTestScript(lines){
   var sess = null;
   for (var idx = 0; idx < lines.length; idx++) {
     if(isVerbose) console.log("\n\n");
-    
+
     var line = lines[idx];
 
     if (line.command === "i" && line.detail === "CONNECT") {
@@ -99,6 +99,15 @@ function processTestScript(lines){
         var isError = false;
         var errors = [];
 
+        // if(isVerbose){
+        //   console.log(typeof(exp));
+        //   expSet = Set(exp.keys());
+        //   actSet = Set(act.keys());
+
+        //   console.log("Items which exist in expected, but not in actual:", expSet.difference(actSet()));
+        //   console.log("Items which exist in actual, but not in expected:", actSet.difference(expSet()));
+        // }
+
         for (actidx in act) {
           if (exp[actidx] === "<TIME>" || exp[actidx] == "00000000-00:00:00") {
             continue;
@@ -106,7 +115,7 @@ function processTestScript(lines){
           if (act[actidx] !== exp[actidx]) {
             //if(isVerbose) console.log("Tag "+idx+"'s expected val ["+exp[idx]+"] does not match actual ["+act[idx]+"]");
             var err = "[ERROR] Tag " + actidx + "'s expected val [" + exp[actidx] + "] does not match actual [" + act[actidx] + "]";
-            if(isVerbose) console.log(err);
+            if(isVerbose) console.error(err);
             isError = true;
             isErrorFree = false;
             errors.push(err);

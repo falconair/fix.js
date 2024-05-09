@@ -8,48 +8,17 @@ exports.getCurrentUTCTimeStamp = function() {
 }
 
 var getUTCTimeStamp = exports.getUTCTimeStamp = function(datetime) {
-  var timestamp = datetime || new Date();
+  const timestamp = datetime || new Date();
+  const year = timestamp.getUTCFullYear();
+  const month = String(timestamp.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(timestamp.getUTCDate()).padStart(2, '0');
+  const hours = String(timestamp.getUTCHours()).padStart(2, '0');
+  const minutes = String(timestamp.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(timestamp.getUTCSeconds()).padStart(2, '0');
+  const millis = String(timestamp.getUTCMilliseconds()).padStart(3, '0');
 
-  var year = timestamp.getUTCFullYear();
-  var month = timestamp.getUTCMonth() + 1;
-  var day = timestamp.getUTCDate();
-  var hours = timestamp.getUTCHours();
-  var minutes = timestamp.getUTCMinutes();
-  var seconds = timestamp.getUTCSeconds();
-  var millis = timestamp.getUTCMilliseconds();
-
-
-  if (month < 10) {
-    month = '0' + month;
-  }
-
-  if (day < 10) {
-    day = '0' + day;
-  }
-
-  if (hours < 10) {
-    hours = '0' + hours;
-  }
-
-  if (minutes < 10) {
-    minutes = '0' + minutes;
-  }
-
-  if (seconds < 10) {
-    seconds = '0' + seconds;
-  }
-
-  if (millis < 10) {
-    millis = '00' + millis;
-  } else if (millis < 100) {
-    millis = '0' + millis;
-  }
-
-
-  var ts = [year, month, day, '-', hours, ':', minutes, ':', seconds, '.', millis].join('');
-
-  return ts;
-}
+  return `${year}${month}${day}-${hours}:${minutes}:${seconds}.${millis}`;
+};
 
 var checksum = exports.checksum = function(str) {
   var chksm = 0;
@@ -75,14 +44,17 @@ var convertMapToFIX = exports.convertMapToFIX = function(map) {
   return convertToFIX(map, map[8], map[52], map[49], map[56], map[34]);
 }
 
-var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp, senderCompID, targetCompID, outgoingSeqNum) {
-  //sys.log('c2F:'+JSON.stringify(msgraw));
+//TODO: No one calls thsi function directly, so make it?
+//var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp, senderCompID, targetCompID, outgoingSeqNum) {
+var convertToFIX = function(msgraw, fixVersion, timeStamp, senderCompID, targetCompID, outgoingSeqNum) {
+    //sys.log('c2F:'+JSON.stringify(msgraw));
   //defensive copy
   var msg = {};
   for (var tag in msgraw) {
     if (msgraw.hasOwnProperty(tag)) msg[tag] = msgraw[tag];
   }
 
+  //These will be calculated, so remove them (how to simulate bad len and checksum?)
   delete msg['9']; //bodylength
   delete msg['10']; //checksum
 
@@ -90,7 +62,7 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
   //var timestamp = new Date();
   var headermsgarr = [];
   var bodymsgarr = [];
-  var trailermsgarr = [];
+  //var trailermsgarr = [];
 
   //msg['8'] = fixVersion; //fixversion
   //msg['52'] = timeStamp; //timestamp
@@ -111,21 +83,37 @@ var convertToFIX = exports.convertToFIX = function(msgraw, fixVersion, timeStamp
 
 
   for (var tag in msg) {
-    if (msg.hasOwnProperty(tag) && tag !== '8' && tag !== '9' && tag !== '35' && tag !== '10' && tag !== '52' && tag !== '49' && tag !== '56' && tag !== '34' && tag !== "") bodymsgarr.push(tag, '=', msg[tag], SOHCHAR);
+    if (msg.hasOwnProperty(tag) 
+      && tag !== '8' 
+      && tag !== '9' 
+      && tag !== '35' 
+      && tag !== '10' 
+      && tag !== '52' 
+      && tag !== '49' 
+      && tag !== '56' 
+      && tag !== '34' 
+      && tag !== ""){
+        bodymsgarr.push(tag, '=', msg[tag], SOHCHAR);
+      } 
   }
 
   var headermsg = headermsgarr.join('');
-  var trailermsg = trailermsgarr.join('');
+  //var trailermsg = trailermsgarr.join('');
   var bodymsg = bodymsgarr.join('');
 
   var outmsgarr = [];
   outmsgarr.push('8=', fixVersion, SOHCHAR);
-  outmsgarr.push('9=', (headermsg.length + bodymsg.length + trailermsg.length), SOHCHAR);
+  //outmsgarr.push('9=', (headermsg.length + bodymsg.length + trailermsg.length), SOHCHAR);
+  outmsgarr.push('9=', (headermsg.length + bodymsg.length), SOHCHAR);
   outmsgarr.push(headermsg);
   outmsgarr.push(bodymsg);
-  outmsgarr.push(trailermsg);
+  //outmsgarr.push(trailermsg);
 
   var outmsg = outmsgarr.join('');
+
+  console.log('header', headermsg);
+  console.log('bodymsg', bodymsg);
+  console.log('outmsg', outmsg);
 
   outmsg += '10=' + checksum(outmsg) + SOHCHAR;
 
@@ -143,7 +131,7 @@ var convertToMap = exports.convertToMap = function(msg) {
 
   //TODO: Somehow an empty string is ending up in maps, look for it properly
   delete fix[''];
-  
+
   return fix;
 
 }
