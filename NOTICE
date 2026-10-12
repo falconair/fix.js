@@ -1,0 +1,8 @@
+fix.js
+
+This product includes FIX Orchestra repository files (dictionaries/orchestra/)
+from https://github.com/FIXTradingCommunity/orchestrations,
+Copyright 2017-2026 FIX Protocol Limited, licensed under the Apache License,
+Version 2.0 (see dictionaries/orchestra/LICENSE).
+The files src/dictionary/fix*.ts and src/dictionary/fix50sp2.data.json are
+generated from them.

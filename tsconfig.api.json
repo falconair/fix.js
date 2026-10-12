@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false,
+    "types": ["node"],
+    "paths": {
+      "fix.js": ["./api/index.d.ts"],
+      "fix.js/*": ["./api/*.d.ts"]
+    }
+  },
+  "include": ["api/**/*.d.ts", "examples/**/*.ts"]
+}

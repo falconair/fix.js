@@ -1,0 +1,39 @@
+name: Interop
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# The suite only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  quickfixj:
+    name: fix.js against QuickFIX/J
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # QuickFIX/J's jars and its acceptance scripts: downloaded once per set of pins, and checked
+      # against their pins every time they are used. The compiled harness is not kept: it is built
+      # on every run, from the source that was checked out.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            interop/.cache/jars
+            interop/.cache/scripts
+          key: interop-${{ hashFiles('interop/pins.ts') }}
+      # Without Java or the downloads the suite would skip its tests and pass: here that is an error.
+      - run: npm run test:interop
+        env:
+          INTEROP_REQUIRED: '1'

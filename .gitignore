@@ -14,3 +14,9 @@ qfixtests
 
 node_modules
 npm-debug.log
+
+# What the interop suite downloads and builds (npm run test:interop)
+interop/.cache
+
+# Working plans and notes, kept out of the repository
+docs/superpowers

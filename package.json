@@ -1,22 +1,33 @@
 {
   "name": "fix.js",
-  "description": "FIX Protocol library",
-  "version": "0.0.1",
+  "description": "A friendly FIX protocol library for building test tools",
+  "version": "0.1.0",
   "homepage": "https://github.com/falconair/fix.js",
   "author": "Shahbaz Chaudhary <shahbazc@gmail.com>",
-  "main": "src/fix.js",
-  "directories": {},
-  "dependencies": {
-    "underscore": "^1.13.6"
-  },
   "engines": {
-    "node": ">=20.13.0"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/falconair/fix.js"
   },
   "scripts": {
-    "test": "node --test --experimental-test-coverage tests/"
+    "test": "node --test --test-timeout=60000 \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test:interop": "node --test \"interop/**/*.test.ts\"",
+    "check:api": "tsc -p tsconfig.api.json && tsc -p tsconfig.conformance.json && node scripts/check-exports.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "node scripts/generate-all.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "fast-xml-parser": "^5.11.1",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire/index.ts",
+    "./fix50sp2": "./src/fix50sp2.ts",
+    "./test": "./src/test.ts"
   }
 }
