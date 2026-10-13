@@ -58,6 +58,6 @@ fix.js is tested against [QuickFIX/J](https://www.quickfixj.org/), and much of w
 ## Related projects
 
 - [nodefix](https://github.com/falconair/nodefix) — earlier FIX engine for Node.js
-- [fixparser.targetcompid.com](http://fixparser.targetcompid.com) — web tool for parsing FIX messages interactively
+- [fixparser.targetcompid.com](https://fixparser.targetcompid.com) — web tool for parsing FIX messages interactively
 - [QuickFIX](http://quickfixengine.org/) — production-grade FIX engine (C++/Java)
 

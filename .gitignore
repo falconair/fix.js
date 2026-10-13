@@ -20,3 +20,6 @@ interop/.cache
 
 # Working plans and notes, kept out of the repository
 docs/superpowers
+
+# agent-native plan local bridge token
+plans/**/.plan-url
