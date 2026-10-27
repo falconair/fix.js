@@ -55,6 +55,10 @@ The full API, with its options and what is still to come, is described in [api/R
 
 fix.js is tested against [QuickFIX/J](https://www.quickfixj.org/), and much of what it gets right at the session layer was found by running QuickFIX/J's own acceptance scripts against it. Thank you to the QuickFIX and QuickFIX/J projects for an engine and a test suite of that quality. fix.js contains no QuickFIX code: the interop suite downloads QuickFIX/J's engine and acceptance scripts when it first runs ([interop](interop/README.md)).
 
+## AI statement
+
+The original version of this library was completely hand-written. However, the current version is largely coded by Claude Code Opus 5.0 and 5.5. This library is used downstream in another product and the library was adapted to serve a real use-case. 
+
 ## Related projects
 
 - [nodefix](https://github.com/falconair/nodefix) — earlier FIX engine for Node.js
